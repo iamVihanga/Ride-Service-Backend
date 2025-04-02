@@ -1,16 +1,24 @@
-import { OpenAPIHono } from "@hono/zod-openapi";
-import { notFound, onError } from "stoker/middlewares";
+import env from "@/env";
+import createApp from "@/lib/create-app";
+import configureOpenAPI from "@/lib/open-api-config";
+// Routes
+import index from "@/routes/index.route";
+import tasks from "@/routes/tasks/tasks.index";
 
-const app = new OpenAPIHono();
+const app = createApp();
 
-app.get("/", (c) => {
-  return c.text("Hello Hono!");
+const routes = [
+  index,
+  tasks
+];
+
+configureOpenAPI(app);
+
+routes.forEach((route) => {
+  app.route("/", route);
 });
 
-// Error Handelling Middleware
-app.onError(onError);
-
-// Not Found Handelling Middleware
-app.notFound(notFound);
-
-export default app;
+export default {
+  port: env.PORT,
+  fetch: app.fetch,
+};

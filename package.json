@@ -1,5 +1,6 @@
 {
   "name": "hono-advanced-backend",
+  "version": "1.0.0",
   "scripts": {
     "dev": "bun run --hot src/index.ts",
     "lint": "eslint .",
@@ -8,8 +9,13 @@
   "dependencies": {
     "@antfu/eslint-config": "^4.11.0",
     "@hono/zod-openapi": "^0.19.2",
+    "@scalar/hono-api-reference": "^0.7.4",
     "hono": "^4.7.5",
-    "stoker": "^1.4.2"
+    "hono-pino": "^0.8.0",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0",
+    "stoker": "^1.4.2",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/bun": "latest",
