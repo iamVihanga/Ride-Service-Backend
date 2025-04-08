@@ -7,13 +7,12 @@ import tasks from '@/routes/tasks/tasks.index';
 
 const app = createApp();
 
-const routes = [index, tasks];
-
 configureOpenAPI(app);
 
-routes.forEach((route) => {
-  app.route('/', route);
-});
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _app = app.route('/', index).route('/tasks', tasks);
+
+export type AppType = typeof _app;
 
 export default {
   port: env.PORT,

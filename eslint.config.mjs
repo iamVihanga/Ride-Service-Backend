@@ -1,4 +1,5 @@
 import pluginJs from '@eslint/js';
+import perfectionist from 'eslint-plugin-perfectionist';
 import prettier from 'eslint-plugin-prettier';
 import securityPlugin from 'eslint-plugin-security';
 import unicornPlugin from 'eslint-plugin-unicorn';
@@ -35,6 +36,7 @@ export default [
   {
     plugins: {
       prettier,
+      perfectionist,
     },
     rules: {
       'prettier/prettier': [
@@ -48,6 +50,12 @@ export default [
           trailingComma: 'es5',
         },
       ],
+      'perfectionist/sort-imports': [
+        'error',
+        {
+          tsconfigRootDir: '.',
+        },
+      ],
     },
   },
   // Unicorn
@@ -58,6 +66,13 @@ export default [
     rules: {
       'unicorn/empty-brace-spaces': 'off',
       'unicorn/no-null': 'off',
+      'unicorn/filename-case': [
+        'error',
+        {
+          case: 'kebabCase',
+          ignore: ['README.md'],
+        },
+      ],
     },
   },
   pluginJs.configs.recommended,
