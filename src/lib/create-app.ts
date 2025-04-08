@@ -1,21 +1,21 @@
-import { OpenAPIHono } from "@hono/zod-openapi";
-import { notFound, onError, serveEmojiFavicon } from "stoker/middlewares";
-import { defaultHook } from "stoker/openapi";
+import { OpenAPIHono } from '@hono/zod-openapi';
+import { notFound, onError, serveEmojiFavicon } from 'stoker/middlewares';
+import { defaultHook } from 'stoker/openapi';
 
-import { logger } from "@/middlewares/pino-logger";
+import { logger } from '@/middlewares/pino-logger';
 
-export function createRouter() {
+export const createRouter = function (): OpenAPIHono<AppBindings> {
   return new OpenAPIHono<AppBindings>({
     strict: false,
-    defaultHook
+    defaultHook,
   });
-}
+};
 
-export default function createApp() {
+export default function createApp(): OpenAPIHono<AppBindings> {
   const app = createRouter();
 
   // Middleware
-  app.use(serveEmojiFavicon("🚀"));
+  app.use(serveEmojiFavicon('🚀'));
   app.use(logger());
 
   // Error Handelling Middleware

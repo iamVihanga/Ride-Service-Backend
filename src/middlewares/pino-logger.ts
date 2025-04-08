@@ -1,24 +1,23 @@
-import { pinoLogger } from "hono-pino";
-import pino from "pino";
-import pretty from "pino-pretty";
+import { pinoLogger } from 'hono-pino';
+import pino from 'pino';
+import pretty from 'pino-pretty';
 
-import env from "@/env";
+import env from '@/env';
 
-function generateRequestId(): string {
+export const generateRequestId = function (): string {
   return `${crypto.randomUUID()}`;
-}
+};
 
-export function logger() {
+export const logger = function () {
   return pinoLogger({
     pino: pino(
       {
-        level: env.LOG_LEVEL || "info",
+        level: env.LOG_LEVEL || 'info',
       },
-      // eslint-disable-next-line style/comma-dangle
-      env.NODE_ENV === "production" ? undefined : pretty()
+      env.NODE_ENV === 'production' ? undefined : pretty()
     ),
     http: {
       referRequestIdKey: generateRequestId(),
     },
   });
-}
+};
