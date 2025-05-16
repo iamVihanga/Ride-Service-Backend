@@ -1,7 +1,7 @@
 import env from '@/env';
 import createApp from '@/lib/create-app';
 import configureOpenAPI from '@/lib/open-api-config';
-// Routes
+import drivers from '@/routes/drivers/drivers.index';
 import index from '@/routes/index.route';
 import tasks from '@/routes/tasks/tasks.index';
 
@@ -10,9 +10,7 @@ const app = createApp();
 configureOpenAPI(app);
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _app = app
-  .route('/', index)
-  .route('/tasks', tasks);
+const _app = app.route('/', index).route('/tasks', tasks).route('/drivers', drivers);
 
 export type AppType = typeof _app;
 

@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations } from 'drizzle-orm';
 
 import { drivers, paymentMethods, user, userNotifications } from './index';
 
