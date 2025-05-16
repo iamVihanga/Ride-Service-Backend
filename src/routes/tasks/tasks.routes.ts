@@ -6,6 +6,8 @@ import { createErrorSchema, IdParamsSchema } from 'stoker/openapi/schemas';
 import { insertTaskSchema, selectTaskSchema, updateTaskSchema } from '@/db/schema';
 import { notFoundSchema } from '@/lib/constants';
 
+import { serverAuthMiddleware } from '@/middlewares/auth-middleware';
+
 const tags: string[] = ['Tasks'];
 
 // List route definition
@@ -25,11 +27,16 @@ export const create = createRoute({
   summary: 'Create a new task',
   path: '/',
   method: 'post',
+  middleware: [serverAuthMiddleware],
   request: {
     body: jsonContentRequired(insertTaskSchema, 'The task to create'),
   },
   responses: {
     [HttpStatusCodes.CREATED]: jsonContent(selectTaskSchema, 'The created task'),
+    [HttpStatusCodes.FORBIDDEN]: jsonContent(
+      z.object({ message: z.string() }),
+      "Access Forbidden"
+    ),
     [HttpStatusCodes.UNPROCESSABLE_ENTITY]: jsonContent(createErrorSchema(insertTaskSchema), 'The validation error(s)'),
   },
 });

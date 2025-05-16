@@ -12,6 +12,7 @@
     "@antfu/eslint-config": "^4.11.0",
     "@hono/zod-openapi": "^0.19.2",
     "@scalar/hono-api-reference": "^0.7.4",
+    "better-auth": "^1.2.8",
     "drizzle-orm": "^0.41.0",
     "drizzle-zod": "^0.7.1",
     "hono": "^4.7.5",
