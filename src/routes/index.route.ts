@@ -17,7 +17,7 @@ const router = createRouter().openapi(
   (c) => {
     return c.json(
       {
-        message: 'This is Hono API',
+        message: 'Ride Service Backend',
       },
       HttpStatusCodes.OK
     );

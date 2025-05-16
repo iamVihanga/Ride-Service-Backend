@@ -7,14 +7,14 @@ export default function configureOpenAPI(app: AppOpenAPI): void {
     openapi: '3.0.0',
     info: {
       version: packageJson.version,
-      title: 'Hono Advanced API with Bun',
+      title: 'Taxi Service Backend API',
     },
   });
 
   app.get(
     '/reference',
     apiReference({
-      theme: 'kepler',
+      theme: 'deepSpace',
       url: '/doc',
     })
   );

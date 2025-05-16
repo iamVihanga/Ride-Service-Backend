@@ -5,7 +5,6 @@ import { createErrorSchema, IdParamsSchema } from 'stoker/openapi/schemas';
 
 import { insertTaskSchema, selectTaskSchema, updateTaskSchema } from '@/db/schema';
 import { notFoundSchema } from '@/lib/constants';
-
 import { serverAuthMiddleware } from '@/middlewares/auth-middleware';
 
 const tags: string[] = ['Tasks'];
@@ -33,10 +32,7 @@ export const create = createRoute({
   },
   responses: {
     [HttpStatusCodes.CREATED]: jsonContent(selectTaskSchema, 'The created task'),
-    [HttpStatusCodes.FORBIDDEN]: jsonContent(
-      z.object({ message: z.string() }),
-      "Access Forbidden"
-    ),
+    [HttpStatusCodes.FORBIDDEN]: jsonContent(z.object({ message: z.string() }), 'Access Forbidden'),
     [HttpStatusCodes.UNPROCESSABLE_ENTITY]: jsonContent(createErrorSchema(insertTaskSchema), 'The validation error(s)'),
   },
 });
