@@ -6,7 +6,10 @@
     "lint": "eslint .",
     "lint:fix": "bun run lint --fix",
     "drizzle:generate": "bunx drizzle-kit generate",
-    "drizzle:migrate": "bunx drizzle-kit migrate"
+    "drizzle:migrate": "bunx drizzle-kit migrate",
+    "typecheck": "tsc --noEmit",
+    "start": "bun ./build/index.js",
+    "build": "bun build ./src/index.ts --outdir ./build --target=bun"
   },
   "dependencies": {
     "@antfu/eslint-config": "^4.11.0",
