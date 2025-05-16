@@ -10,7 +10,9 @@ const app = createApp();
 configureOpenAPI(app);
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _app = app.route('/', index).route('/tasks', tasks);
+const _app = app
+  .route('/', index)
+  .route('/tasks', tasks);
 
 export type AppType = typeof _app;
 
