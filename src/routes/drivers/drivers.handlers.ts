@@ -5,10 +5,10 @@ import * as HttpStatusPhrases from 'stoker/http-status-phrases';
 import type { AppRouteHandler } from '@/types';
 
 import { db } from '@/db';
-import { drivers, user } from '@/db/schema';
+import { drivers, user, vehicles } from '@/db/schema';
 import { ZOD_ERROR_CODES, ZOD_ERROR_MESSAGES } from '@/lib/constants';
 
-import type { CreateRoute, GetOneRoute, ListRoute, PatchRoute, RemoveRoute } from './drivers.routes';
+import type { CreateRoute, GetOneRoute, GetVehiclesRoute, ListRoute, PatchRoute, RemoveRoute } from './drivers.routes';
 
 // List drivers route handler
 export const list: AppRouteHandler<ListRoute> = async (c) => {
@@ -105,4 +105,48 @@ export const remove: AppRouteHandler<RemoveRoute> = async (c) => {
   }
 
   return c.body(null, HttpStatusCodes.NO_CONTENT);
+};
+
+// Get driver vehicles handler
+export const getVehicles: AppRouteHandler<GetVehiclesRoute> = async (c) => {
+  const user = c.get('user');
+
+  if (!user) {
+    return c.json({ message: HttpStatusPhrases.UNAUTHORIZED }, HttpStatusCodes.UNAUTHORIZED);
+  }
+
+  // Get driver ID from params
+  const { id } = c.req.valid('param');
+
+  // First, check if the driver exists
+  const driver = await db.query.drivers.findFirst({
+    where: eq(drivers.id, id),
+  });
+
+  if (!driver) {
+    return c.json({ message: 'Driver not found' }, HttpStatusCodes.NOT_FOUND);
+  }
+
+  // Check if user is authorized to access this data
+  // Only admins or the driver themselves can access their vehicles
+  const isAdmin = user.role === 'admin';
+  const isOwnDriver = driver.userId === user.id;
+
+  if (!isAdmin && !isOwnDriver) {
+    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
+  }
+
+  // Fetch the driver's vehicles
+  const driverVehicles = await db.query.vehicles.findMany({
+    where: eq(vehicles.driverId, id),
+  });
+
+  // Return the driver with their vehicles
+  return c.json(
+    {
+      ...driver,
+      vehicles: driverVehicles,
+    },
+    HttpStatusCodes.OK
+  );
 };

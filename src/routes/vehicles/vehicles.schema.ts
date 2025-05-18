@@ -3,7 +3,7 @@ import { boolean, doublePrecision, index, integer, pgTable, text, timestamp, uui
 import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
 import { z } from 'zod';
 
-import { drivers } from '@/db/schema';
+import { drivers, selectDriverSchema } from '@/db/schema';
 
 /**
  * Vehicles Table - Stores information about drivers' vehicles
@@ -114,3 +114,10 @@ export type UpdateVehicleType = z.infer<typeof updateVehicleTypeSchema>;
 export const vehicleTypesRelations = relations(vehicleTypes, ({ many }) => ({
   vehicles: many(vehicles),
 }));
+
+// Driver with vehicles: Zod schema
+export const driverWithVehiclesSchema = selectDriverSchema.extend({
+  vehicles: z.array(selectVehicleSchema),
+});
+
+export type DriverWithVehicles = z.infer<typeof driverWithVehiclesSchema>;
