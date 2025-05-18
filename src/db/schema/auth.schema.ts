@@ -1,4 +1,5 @@
 import { boolean, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { createSelectSchema } from 'drizzle-zod';
 
 import { timestamps } from '../column.helpers';
 
@@ -72,3 +73,5 @@ export const otpList = pgTable('otp_list', {
   phoneNumber: text('phone_number'),
   ...timestamps,
 });
+
+export const selectOtpList = createSelectSchema(otpList);
