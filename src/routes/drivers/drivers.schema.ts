@@ -34,7 +34,14 @@ export const selectDriverSchema = createSelectSchema(drivers);
 
 export type SelectDriver = z.infer<typeof selectDriverSchema>;
 
-export const insertDriverSchema = createInsertSchema(drivers).omit({
+export const insertDriverSchema = createInsertSchema(drivers, {
+  licenseExpiry: z
+    .string()
+    .refine((val) => !isNaN(Date.parse(val)), {
+      message: 'licenseExpiry must be a valid date string (e.g., "2025-12-31")',
+    })
+    .transform((val) => new Date(val)), // Transform string to Date object
+}).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
