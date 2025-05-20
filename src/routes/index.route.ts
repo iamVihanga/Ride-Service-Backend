@@ -1,8 +1,10 @@
 import { createRoute } from '@hono/zod-openapi';
 import * as HttpStatusCodes from 'stoker/http-status-codes';
 import { jsonContent } from 'stoker/openapi/helpers';
-import { createMessageObjectSchema } from 'stoker/openapi/schemas';
+import { z } from 'zod';
 
+import { db } from '@/db';
+import { otpList, selectOtpList } from '@/db/schema';
 import { createRouter } from '@/lib/create-app';
 
 const router = createRouter().openapi(
@@ -11,16 +13,13 @@ const router = createRouter().openapi(
     method: 'get',
     path: '/',
     responses: {
-      [HttpStatusCodes.OK]: jsonContent(createMessageObjectSchema('Hono API'), 'Hono API - Index Endpoint'),
+      [HttpStatusCodes.OK]: jsonContent(z.array(selectOtpList), 'List of OTPs'),
     },
   }),
-  (c) => {
-    return c.json(
-      {
-        message: 'Ride Service Backend',
-      },
-      HttpStatusCodes.OK
-    );
+  async (c) => {
+    const otps = await db.select().from(otpList);
+
+    return c.json(otps, HttpStatusCodes.OK);
   }
 );
 

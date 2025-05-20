@@ -14,7 +14,7 @@ export const createRouter = function (): OpenAPIHono<AppBindings> {
 };
 
 export default function createApp(): OpenAPIHono<AppBindings> {
-  const app = createRouter();
+  const app = createRouter().basePath('/api');
 
   // Middleware
   app.use(serveEmojiFavicon('🚀'));
@@ -36,7 +36,7 @@ export default function createApp(): OpenAPIHono<AppBindings> {
     return next();
   });
 
-  app.on(['POST', 'GET'], '/api/auth/*', (c) => {
+  app.on(['POST', 'GET'], '/auth/*', (c) => {
     return auth.handler(c.req.raw);
   });
   // -------------------------------------------------

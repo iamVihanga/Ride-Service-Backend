@@ -1,14 +1,17 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import * as HttpStatusCodes from 'stoker/http-status-codes';
 import { jsonContent, jsonContentRequired } from 'stoker/openapi/helpers';
-import { createErrorSchema, IdParamsSchema } from 'stoker/openapi/schemas';
+import { createErrorSchema } from 'stoker/openapi/schemas';
 
 import { notFoundSchema } from '@/lib/constants';
 import { serverAuthMiddleware } from '@/middlewares/auth-middleware';
 
+import { driverWithVehiclesSchema } from '../vehicles/vehicles.schema';
 import { insertDriverSchema, selectDriverSchema, updateDriverSchema } from './drivers.schema';
 
 const tags: string[] = ['Drivers'];
+
+const IdParamsSchema = z.object({ id: z.string() });
 
 // List route definition
 export const list = createRoute({
@@ -93,8 +96,27 @@ export const remove = createRoute({
   },
 });
 
+// Get driver vehicles
+export const getVehicles = createRoute({
+  tags,
+  summary: 'Get vehicles owned by driver',
+  path: '/{id}/vehicles',
+  method: 'get',
+  middleware: [serverAuthMiddleware],
+  request: {
+    params: IdParamsSchema,
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(driverWithVehiclesSchema, 'The list of vehicles owned by driver'),
+    [HttpStatusCodes.UNAUTHORIZED]: jsonContent(z.object({ message: z.string() }), 'Unauthenticated request'),
+    [HttpStatusCodes.FORBIDDEN]: jsonContent(z.object({ message: z.string() }), 'Access Forbidden'),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(z.object({ message: z.string() }), 'Driver not found'),
+  },
+});
+
 export type ListRoute = typeof list;
 export type CreateRoute = typeof create;
 export type GetOneRoute = typeof getOne;
 export type PatchRoute = typeof patch;
 export type RemoveRoute = typeof remove;
+export type GetVehiclesRoute = typeof getVehicles;

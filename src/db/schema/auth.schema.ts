@@ -1,4 +1,7 @@
-import { boolean, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { boolean, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { createSelectSchema } from 'drizzle-zod';
+
+import { timestamps } from '../column.helpers';
 
 export const user = pgTable('user', {
   id: text('id').primaryKey(),
@@ -62,3 +65,13 @@ export const verification = pgTable('verification', {
   createdAt: timestamp('created_at').$defaultFn(() => /* @__PURE__ */ new Date()),
   updatedAt: timestamp('updated_at').$defaultFn(() => /* @__PURE__ */ new Date()),
 });
+
+// Temp: Table for store OTPs temporarly
+export const otpList = pgTable('otp_list', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  code: text('code').notNull(),
+  phoneNumber: text('phone_number'),
+  ...timestamps,
+});
+
+export const selectOtpList = createSelectSchema(otpList);

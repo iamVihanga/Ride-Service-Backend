@@ -3,7 +3,7 @@ import { boolean, doublePrecision, index, integer, pgTable, text, timestamp, uui
 import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
 import { z } from 'zod';
 
-import { drivers } from '@/db/schema';
+import { drivers, selectDriverSchema } from '@/db/schema';
 
 /**
  * Vehicles Table - Stores information about drivers' vehicles
@@ -49,7 +49,20 @@ export const selectVehicleSchema = createSelectSchema(vehicles);
 
 export type SelectVehicle = z.infer<typeof selectVehicleSchema>;
 
-export const insertVehicleSchema = createInsertSchema(vehicles).omit({
+export const insertVehicleSchema = createInsertSchema(vehicles, {
+  insuranceExpiry: z
+    .string()
+    .refine((val) => !isNaN(Date.parse(val)), {
+      message: 'insuranceExpiry must be a valid date string (e.g., "2025-12-31")',
+    })
+    .transform((val) => new Date(val)), // Transform string to Date object
+  registrationExpiry: z
+    .string()
+    .refine((val) => !isNaN(Date.parse(val)), {
+      message: 'registrationExpiry must be a valid date string (e.g., "2025-12-31")',
+    })
+    .transform((val) => new Date(val)), // Transform string to Date object
+}).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
@@ -114,3 +127,10 @@ export type UpdateVehicleType = z.infer<typeof updateVehicleTypeSchema>;
 export const vehicleTypesRelations = relations(vehicleTypes, ({ many }) => ({
   vehicles: many(vehicles),
 }));
+
+// Driver with vehicles: Zod schema
+export const driverWithVehiclesSchema = selectDriverSchema.extend({
+  vehicles: z.array(selectVehicleSchema),
+});
+
+export type DriverWithVehicles = z.infer<typeof driverWithVehiclesSchema>;
