@@ -5,9 +5,9 @@ import * as HttpStatusPhrases from 'stoker/http-status-phrases';
 import type { AppRouteHandler } from '@/types';
 
 import { db } from '@/db';
-import { drivers, vehicles } from '@/db/schema';
+import { vehicles, vehicleTypes } from '@/db/schema';
 
-import type { ListVehiclesRoute, Query } from './vehicles.routes';
+import type { AddVehicleRoute, AddVehicleTypeRoute, ListVehiclesRoute, Query, SelectVehicleTypeRoute } from './vehicles.routes';
 
 // List tasks route handler
 export const listVehicles: AppRouteHandler<ListVehiclesRoute> = async (c) => {
@@ -29,20 +29,15 @@ export const listVehicles: AppRouteHandler<ListVehiclesRoute> = async (c) => {
 
   // If the user is not an admin, we need to filter by driver
   if (!isAdmin) {
-    const driverRec = await db.query.drivers.findFirst({ where: eq(drivers.userId, user.id) });
-
-    if (!driverRec) {
-      return c.json(
-        {
-          message: 'Driver not found',
-        },
-        HttpStatusCodes.FORBIDDEN
-      );
+    if (!user.driver) {
+      return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
     }
 
     const driverVehicles = await db.query.vehicles.findMany({
-      where: eq(vehicles.driverId, driverRec.id),
+      where: eq(vehicles.driverId, user.driver.id),
     });
+
+    console.log('Driver vehicles:', driverVehicles);
 
     return c.json(
       {
@@ -89,4 +84,47 @@ export const listVehicles: AppRouteHandler<ListVehiclesRoute> = async (c) => {
     },
     200
   );
+};
+
+// Add vehicle to driver route handler
+export const addVehicle: AppRouteHandler<AddVehicleRoute> = async (c) => {
+  const user = c.get('user');
+
+  if (!user) {
+    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
+  }
+
+  const body = c.req.valid('json');
+
+  const addedVehicle = await db.insert(vehicles).values(body).returning();
+
+  return c.json(addedVehicle[0], HttpStatusCodes.OK);
+};
+
+// Get vehicle types route handler
+export const selectVehicleTypes: AppRouteHandler<SelectVehicleTypeRoute> = async (c) => {
+  const user = c.get('user');
+
+  if (!user) {
+    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
+  }
+
+  const allVehicleTypes = await db.select().from(vehicleTypes);
+
+  return c.json(allVehicleTypes, HttpStatusCodes.OK);
+};
+
+// Add vehicle type route handler
+export const addVehicleType: AppRouteHandler<AddVehicleTypeRoute> = async (c) => {
+  const user = c.get('user');
+
+  if (!user) {
+    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
+  }
+
+  const body = c.req.valid('json');
+
+  const createType = await db.insert(vehicleTypes).values(body).returning();
+
+  return c.json(createType[0], HttpStatusCodes.OK);
 };

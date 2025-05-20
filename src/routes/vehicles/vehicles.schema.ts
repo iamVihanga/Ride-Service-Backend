@@ -49,7 +49,20 @@ export const selectVehicleSchema = createSelectSchema(vehicles);
 
 export type SelectVehicle = z.infer<typeof selectVehicleSchema>;
 
-export const insertVehicleSchema = createInsertSchema(vehicles).omit({
+export const insertVehicleSchema = createInsertSchema(vehicles, {
+  insuranceExpiry: z
+    .string()
+    .refine((val) => !isNaN(Date.parse(val)), {
+      message: 'insuranceExpiry must be a valid date string (e.g., "2025-12-31")',
+    })
+    .transform((val) => new Date(val)), // Transform string to Date object
+  registrationExpiry: z
+    .string()
+    .refine((val) => !isNaN(Date.parse(val)), {
+      message: 'registrationExpiry must be a valid date string (e.g., "2025-12-31")',
+    })
+    .transform((val) => new Date(val)), // Transform string to Date object
+}).omit({
   id: true,
   createdAt: true,
   updatedAt: true,

@@ -1,13 +1,12 @@
-import { createRoute } from '@hono/zod-openapi';
+import { createRoute, z } from '@hono/zod-openapi';
 import * as HttpStatusCodes from 'stoker/http-status-codes';
-import { jsonContent } from 'stoker/openapi/helpers';
-import { z } from 'zod';
+import { jsonContent, jsonContentRequired } from 'stoker/openapi/helpers';
 
 import { serverAuthMiddleware } from '@/middlewares/auth-middleware';
 
-import { selectVehicleSchema } from './vehicles.schema';
+import { insertVehicleSchema, insertVehicleTypeSchema, selectVehicleSchema, selectVehicleTypesSchema } from './vehicles.schema';
 
-const tags = ['Vehicles'];
+const tags: string[] = ['Vehicles'];
 
 // const IdParamsSchema = z.object({ id: z.string() });
 
@@ -53,3 +52,57 @@ export const listVehicles = createRoute({
 });
 
 export type ListVehiclesRoute = typeof listVehicles;
+
+// ---------- Add Vehicle to Session User ----------
+export const addVehicle = createRoute({
+  tags,
+  summary: 'Add vehicle to session user',
+  path: '/',
+  method: 'post',
+  middleware: [serverAuthMiddleware],
+  request: {
+    body: jsonContentRequired(insertVehicleSchema, 'Vehicle details with Driver ID'),
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(selectVehicleSchema, 'The vehicle details'),
+    [HttpStatusCodes.UNAUTHORIZED]: jsonContent(z.object({ message: z.string() }), 'Unauthenticated request'),
+    [HttpStatusCodes.FORBIDDEN]: jsonContent(z.object({ message: z.string() }), 'Access Forbidden'),
+  },
+});
+
+export type AddVehicleRoute = typeof addVehicle;
+
+// ---------- Get Vehicle types ----------
+export const selectVehicleTypes = createRoute({
+  tags,
+  summary: 'Get vehicle Types',
+  path: '/types',
+  method: 'get',
+  middleware: [serverAuthMiddleware],
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(z.array(selectVehicleTypesSchema), 'The vehicle types'),
+    [HttpStatusCodes.UNAUTHORIZED]: jsonContent(z.object({ message: z.string() }), 'Unauthenticated request'),
+    [HttpStatusCodes.FORBIDDEN]: jsonContent(z.object({ message: z.string() }), 'Access Forbidden'),
+  },
+});
+
+export type SelectVehicleTypeRoute = typeof selectVehicleTypes;
+
+// ---------- Add Vehicle Types ---------
+export const addVehicleType = createRoute({
+  tags,
+  summary: 'Add vehicle Type',
+  path: '/types',
+  method: 'post',
+  middleware: [serverAuthMiddleware],
+  request: {
+    body: jsonContentRequired(insertVehicleTypeSchema, 'Vehicle type details'),
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(selectVehicleTypesSchema, 'The vehicle details'),
+    [HttpStatusCodes.UNAUTHORIZED]: jsonContent(z.object({ message: z.string() }), 'Unauthenticated request'),
+    [HttpStatusCodes.FORBIDDEN]: jsonContent(z.object({ message: z.string() }), 'Access Forbidden'),
+  },
+});
+
+export type AddVehicleTypeRoute = typeof addVehicleType;
