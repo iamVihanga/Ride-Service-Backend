@@ -4,7 +4,7 @@ import { admin, bearer, customSession, openAPI, phoneNumber } from 'better-auth/
 import { eq } from 'drizzle-orm';
 
 import { db } from '@/db';
-import { drivers, otpList } from '@/db/schema';
+import { otpList, user as userSchema } from '@/db/schema';
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -15,19 +15,6 @@ export const auth = betterAuth({
   },
   // Better Auth Plugins
   plugins: [
-    customSession(async ({ user, session }) => {
-      const driver = await db.query.drivers.findFirst({
-        where: eq(drivers.userId, user.id),
-      });
-
-      return {
-        user: {
-          ...user,
-          driver: driver || null,
-        },
-        session,
-      };
-    }),
     phoneNumber({
       sendOTP: async ({ phoneNumber, code }) => {
         // TODO: Implement sending OTP code via SMS
@@ -51,5 +38,40 @@ export const auth = betterAuth({
     admin(),
     bearer(),
     openAPI(),
+    customSession(async ({ user, session }) => {
+      const userData = await db.query.user.findFirst({
+        where: eq(userSchema.id, user.id),
+        with: {
+          driver: true,
+        },
+      });
+
+      if (!userData) return { user: null, session: null };
+
+      const customUser = {
+        id: userData.id,
+        name: userData.name,
+        email: userData.email,
+        emailVerified: userData.emailVerified,
+        image: userData.image,
+        phoneNumber: userData.phoneNumber,
+        phoneNumberVerified: userData.phoneNumberVerified,
+        role: userData.role,
+        banned: userData.banned,
+        banReason: userData.banReason,
+        banExpires: userData.banExpires,
+        createdAt: userData.createdAt,
+        updatedAt: userData.updatedAt,
+        driver: userData.driver,
+      };
+
+      return {
+        user: {
+          ...user,
+          ...customUser,
+        },
+        session,
+      };
+    }),
   ],
 });
