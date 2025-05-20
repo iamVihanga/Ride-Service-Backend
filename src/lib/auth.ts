@@ -1,9 +1,10 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { admin, bearer, openAPI, phoneNumber } from 'better-auth/plugins';
+import { admin, bearer, customSession, openAPI, phoneNumber } from 'better-auth/plugins';
+import { eq } from 'drizzle-orm';
 
 import { db } from '@/db';
-import { otpList } from '@/db/schema';
+import { drivers, otpList } from '@/db/schema';
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -14,6 +15,19 @@ export const auth = betterAuth({
   },
   // Better Auth Plugins
   plugins: [
+    customSession(async ({ user, session }) => {
+      const driver = await db.query.drivers.findFirst({
+        where: eq(drivers.userId, user.id),
+      });
+
+      return {
+        user: {
+          ...user,
+          driver: driver || null,
+        },
+        session,
+      };
+    }),
     phoneNumber({
       sendOTP: async ({ phoneNumber, code }) => {
         // TODO: Implement sending OTP code via SMS
