@@ -15,7 +15,7 @@ export default function configureOpenAPI(app: AppOpenAPI): void {
     '/reference',
     apiReference({
       theme: 'deepSpace',
-      url: '/doc',
+      url: '/api/doc',
     })
   );
 }
