@@ -19,4 +19,12 @@ export const methodsRouter = createRouter()
   .openapi(routes.updatePaymentMethod, handlers.updatePaymentMethod)
   .openapi(routes.deletePaymentMethod, handlers.deletePaymentMethod);
 
+export const promoCodesRouter = createRouter()
+  // Promo code routes
+  .openapi(routes.listPromoCodes, handlers.listPromoCodes)
+  .openapi(routes.createPromoCode, handlers.createPromoCode)
+  .openapi(routes.getPromoCode, handlers.getPromoCode)
+  .openapi(routes.updatePromoCode, handlers.updatePromoCode)
+  .openapi(routes.deletePromoCode, handlers.deletePromoCode);
+
 export default router;

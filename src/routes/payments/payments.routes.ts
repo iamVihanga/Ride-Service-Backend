@@ -274,6 +274,94 @@ export const deletePaymentMethod = createRoute({
   },
 });
 
+// ---------- Promo Codes Routes ----------
+const promoCodesTags: string[] = ['Promo Codes'];
+
+// List promo codes route
+export const listPromoCodes = createRoute({
+  tags: promoCodesTags,
+  summary: 'List all promo codes',
+  path: '/',
+  method: 'get',
+  middleware: [serverAuthMiddleware],
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(z.array(selectPromoCodeSchema), 'List of promo codes'),
+    [HttpStatusCodes.UNAUTHORIZED]: jsonContent(z.object({ message: z.string() }), 'Unauthenticated request'),
+  },
+});
+
+// Create promo code route
+export const createPromoCode = createRoute({
+  tags: promoCodesTags,
+  summary: 'Create a new promo code',
+  path: '/',
+  method: 'post',
+  middleware: [serverAuthMiddleware],
+  request: {
+    body: jsonContentRequired(insertPromoCodeSchema, 'Promo code details'),
+  },
+  responses: {
+    [HttpStatusCodes.CREATED]: jsonContent(selectPromoCodeSchema, 'The created promo code'),
+    [HttpStatusCodes.UNAUTHORIZED]: jsonContent(z.object({ message: z.string() }), 'Unauthenticated request'),
+    [HttpStatusCodes.UNPROCESSABLE_ENTITY]: jsonContent(createErrorSchema(insertPromoCodeSchema), 'Validation errors'),
+  },
+});
+
+// Get promo code by ID route
+export const getPromoCode = createRoute({
+  tags: promoCodesTags,
+  summary: 'Get promo code details',
+  path: '/{id}',
+  method: 'get',
+  middleware: [serverAuthMiddleware],
+  request: {
+    params: IdParamsSchema,
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(selectPromoCodeSchema, 'Promo code details'),
+    [HttpStatusCodes.UNAUTHORIZED]: jsonContent(z.object({ message: z.string() }), 'Unauthenticated request'),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(notFoundSchema, 'Promo code not found'),
+  },
+});
+
+// Update promo code route
+export const updatePromoCode = createRoute({
+  tags: promoCodesTags,
+  summary: 'Update promo code details',
+  path: '/{id}',
+  method: 'patch',
+  middleware: [serverAuthMiddleware],
+  request: {
+    params: IdParamsSchema,
+    body: jsonContentRequired(updatePromoCodeSchema, 'Promo code update details'),
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(selectPromoCodeSchema, 'Updated promo code details'),
+    [HttpStatusCodes.UNAUTHORIZED]: jsonContent(z.object({ message: z.string() }), 'Unauthenticated request'),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(notFoundSchema, 'Promo code not found'),
+    [HttpStatusCodes.UNPROCESSABLE_ENTITY]: jsonContent(createErrorSchema(updatePromoCodeSchema), 'Validation errors'),
+  },
+});
+
+// Delete promo code route
+export const deletePromoCode = createRoute({
+  tags: promoCodesTags,
+  summary: 'Delete a promo code',
+  path: '/{id}',
+  method: 'delete',
+  middleware: [serverAuthMiddleware],
+  request: {
+    params: IdParamsSchema,
+  },
+  responses: {
+    [HttpStatusCodes.NO_CONTENT]: {
+      description: 'Promo code deleted successfully',
+    },
+    [HttpStatusCodes.UNAUTHORIZED]: jsonContent(z.object({ message: z.string() }), 'Unauthenticated request'),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(notFoundSchema, 'Promo code not found'),
+  },
+});
+
 // ---------- Export route types ----------
 export type ListPaymentsRoute = typeof listPayments;
 export type CreatePaymentRoute = typeof createPayment;
@@ -286,3 +374,9 @@ export type CreatePaymentMethodRoute = typeof createPaymentMethod;
 export type GetPaymentMethodRoute = typeof getPaymentMethod;
 export type UpdatePaymentMethodRoute = typeof updatePaymentMethod;
 export type DeletePaymentMethodRoute = typeof deletePaymentMethod;
+
+export type ListPromoCodesRoute = typeof listPromoCodes;
+export type CreatePromoCodeRoute = typeof createPromoCode;
+export type GetPromoCodeRoute = typeof getPromoCode;
+export type UpdatePromoCodeRoute = typeof updatePromoCode;
+export type DeletePromoCodeRoute = typeof deletePromoCode;

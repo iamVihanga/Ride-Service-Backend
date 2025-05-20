@@ -5,21 +5,26 @@ import * as HttpStatusPhrases from 'stoker/http-status-phrases';
 import type { AppRouteHandler } from '@/types';
 
 import { db } from '@/db';
-import { paymentMethods, payments } from '@/db/schema';
+import { paymentMethods, payments, promoCodes } from '@/db/schema';
 import { ZOD_ERROR_CODES, ZOD_ERROR_MESSAGES } from '@/lib/constants';
 
 import type {
   CreatePaymentMethodRoute,
   CreatePaymentRoute,
+  CreatePromoCodeRoute,
   DeletePaymentMethodRoute,
   DeletePaymentRoute,
+  DeletePromoCodeRoute,
   GetPaymentMethodRoute,
   GetPaymentRoute,
+  GetPromoCodeRoute,
   ListPaymentMethodsRoute,
   ListPaymentsRoute,
+  ListPromoCodesRoute,
   PaymentQuery,
   UpdatePaymentMethodRoute,
   UpdatePaymentRoute,
+  UpdatePromoCodeRoute,
 } from './payments.routes';
 
 // ---------- Payments Handlers ----------
@@ -335,6 +340,161 @@ export const deletePaymentMethod: AppRouteHandler<DeletePaymentMethodRoute> = as
   }
 
   await db.delete(paymentMethods).where(eq(paymentMethods.id, id));
+
+  return c.body(null, HttpStatusCodes.NO_CONTENT);
+};
+
+// ---------- Promo Codes Handlers ----------
+
+// List promo codes handler
+export const listPromoCodes: AppRouteHandler<ListPromoCodesRoute> = async (c) => {
+  const user = c.get('user');
+
+  if (!user) {
+    return c.json({ message: HttpStatusPhrases.UNAUTHORIZED }, HttpStatusCodes.UNAUTHORIZED);
+  }
+
+  // Check if user is admin, as promo codes are typically admin-managed
+  if (user.role !== 'admin') {
+    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
+  }
+
+  const items = await db.select().from(promoCodes).orderBy(desc(promoCodes.createdAt));
+  return c.json(items, HttpStatusCodes.OK);
+};
+
+// Create promo code handler
+export const createPromoCode: AppRouteHandler<CreatePromoCodeRoute> = async (c) => {
+  const user = c.get('user');
+
+  if (!user) {
+    return c.json({ message: HttpStatusPhrases.UNAUTHORIZED }, HttpStatusCodes.UNAUTHORIZED);
+  }
+
+  // Check if user is admin
+  if (user.role !== 'admin') {
+    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
+  }
+
+  const promoCodeData = c.req.valid('json');
+
+  try {
+    const [inserted] = await db.insert(promoCodes).values(promoCodeData).returning();
+    return c.json(inserted, HttpStatusCodes.CREATED);
+  } catch (error) {
+    console.error('Error creating promo code:', error);
+    return c.json(
+      {
+        message: 'Failed to create promo code. The code may already exist.',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      HttpStatusCodes.UNPROCESSABLE_ENTITY
+    );
+  }
+};
+
+// Get promo code by ID handler
+export const getPromoCode: AppRouteHandler<GetPromoCodeRoute> = async (c) => {
+  const user = c.get('user');
+
+  if (!user) {
+    return c.json({ message: HttpStatusPhrases.UNAUTHORIZED }, HttpStatusCodes.UNAUTHORIZED);
+  }
+
+  // Admin-only check could be relaxed if you want to allow users to view promo code details
+  if (user.role !== 'admin') {
+    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
+  }
+
+  const { id } = c.req.valid('param');
+
+  const promoCode = await db.query.promoCodes.findFirst({
+    where: eq(promoCodes.id, id),
+  });
+
+  if (!promoCode) {
+    return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
+  }
+
+  return c.json(promoCode, HttpStatusCodes.OK);
+};
+
+// Update promo code handler
+export const updatePromoCode: AppRouteHandler<UpdatePromoCodeRoute> = async (c) => {
+  const user = c.get('user');
+
+  if (!user) {
+    return c.json({ message: HttpStatusPhrases.UNAUTHORIZED }, HttpStatusCodes.UNAUTHORIZED);
+  }
+
+  // Check if user is admin
+  if (user.role !== 'admin') {
+    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
+  }
+
+  const { id } = c.req.valid('param');
+  const updates = c.req.valid('json');
+
+  // Check if at least one field is present in the request body
+  if (Object.keys(updates).length === 0) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          issues: [
+            {
+              code: ZOD_ERROR_CODES.INVALID_UPDATES,
+              path: [],
+              message: ZOD_ERROR_MESSAGES.NO_UPDATES,
+            },
+          ],
+          name: 'ZodError',
+        },
+      },
+      HttpStatusCodes.UNPROCESSABLE_ENTITY
+    );
+  }
+
+  try {
+    const [updatedPromoCode] = await db.update(promoCodes).set(updates).where(eq(promoCodes.id, id)).returning();
+
+    if (!updatedPromoCode) {
+      return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
+    }
+
+    return c.json(updatedPromoCode, HttpStatusCodes.OK);
+  } catch (error) {
+    console.error('Error updating promo code:', error);
+    return c.json(
+      {
+        message: 'Failed to update promo code.',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      HttpStatusCodes.UNPROCESSABLE_ENTITY
+    );
+  }
+};
+
+// Delete promo code handler
+export const deletePromoCode: AppRouteHandler<DeletePromoCodeRoute> = async (c) => {
+  const user = c.get('user');
+
+  if (!user) {
+    return c.json({ message: HttpStatusPhrases.UNAUTHORIZED }, HttpStatusCodes.UNAUTHORIZED);
+  }
+
+  // Check if user is admin
+  if (user.role !== 'admin') {
+    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
+  }
+
+  const { id } = c.req.valid('param');
+
+  const result = await db.delete(promoCodes).where(eq(promoCodes.id, id));
+
+  if (!result || result.rowCount === 0) {
+    return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
+  }
 
   return c.body(null, HttpStatusCodes.NO_CONTENT);
 };
