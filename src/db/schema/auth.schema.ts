@@ -1,6 +1,9 @@
+import { relations } from 'drizzle-orm';
 import { boolean, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { createSelectSchema } from 'drizzle-zod';
 
+import { drivers } from '@/routes/drivers/drivers.schema';
+import { paymentMethods } from '@/routes/payments/payments.schema';
 import { timestamps } from '../column.helpers';
 
 export const user = pgTable('user', {
@@ -75,3 +78,12 @@ export const otpList = pgTable('otp_list', {
 });
 
 export const selectOtpList = createSelectSchema(otpList);
+
+// Add the user relations here
+export const usersRelations = relations(user, ({ one, many }) => ({
+  driver: one(drivers, {
+    fields: [user.id],
+    references: [drivers.userId],
+  }),
+  paymentMethods: many(paymentMethods),
+}));

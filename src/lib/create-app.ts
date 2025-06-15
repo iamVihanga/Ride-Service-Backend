@@ -23,17 +23,24 @@ export default function createApp(): OpenAPIHono<AppBindings> {
   // -------------------------------------------------
   // Better auth Authentication Middleware
   app.use('*', async (c, next) => {
-    const session = await auth.api.getSession({ headers: c.req.raw.headers });
+    try {
+      const session = await auth.api.getSession({ headers: c.req.raw.headers });
 
-    if (!session) {
+      if (!session) {
+        c.set('user', null);
+        c.set('session', null);
+        return next();
+      }
+
+      c.set('user', session.user);
+      c.set('session', session.session);
+      return next();
+    } catch (error) {
+      console.error('Auth middleware error:', error);
       c.set('user', null);
       c.set('session', null);
       return next();
     }
-
-    c.set('user', session.user);
-    c.set('session', session.session);
-    return next();
   });
 
   app.on(['POST', 'GET'], '/auth/*', (c) => {
@@ -41,8 +48,22 @@ export default function createApp(): OpenAPIHono<AppBindings> {
   });
   // -------------------------------------------------
 
-  // Error Handelling Middleware
-  app.onError(onError);
+  // Error Handelling Middleware with better stack overflow handling
+  app.onError((err, c) => {
+    console.error('Application error:', err);
+
+    if (err.message?.includes('Maximum call stack size exceeded')) {
+      return c.json(
+        {
+          message: 'Internal server error - circular reference detected',
+          error: 'STACK_OVERFLOW'
+        },
+        500
+      );
+    }
+
+    return onError(err, c);
+  });
 
   // Not Found Handelling Middleware
   app.notFound(notFound);
