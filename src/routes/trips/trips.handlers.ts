@@ -1,12 +1,10 @@
-import { and, desc, eq, inArray, isNotNull, not, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, not } from 'drizzle-orm';
 import * as HttpStatusCodes from 'stoker/http-status-codes';
 import * as HttpStatusPhrases from 'stoker/http-status-phrases';
 
-import type { AppRouteHandler } from '@/types';
-
 import { db } from '@/db';
-import { drivers, tripLocationUpdates, trips, tripWaypoints, vehicles } from '@/db/schema';
-import { ZOD_ERROR_CODES, ZOD_ERROR_MESSAGES } from '@/lib/constants';
+import { drivers, trips, vehicles } from '@/db/schema';
+import type { AppRouteHandler } from '@/types';
 
 import type {
   AddWaypointRoute,
@@ -19,16 +17,15 @@ import type {
   ListTripsRoute,
   RateTripRoute,
   SearchAvailableVehiclesRoute,
-  SearchQuery,
   StartTripRoute,
   TripFilters,
   UpdateLocationRoute,
-  UpdateTripRoute,
+  UpdateTripRoute
 } from './trips.routes';
 
 // ---------- Trip Handlers ----------
 
-// List trips handler
+// List trips handler - Fixed query building
 export const listTrips: AppRouteHandler<ListTripsRoute> = async (c) => {
   const user = c.get('user');
 
@@ -39,8 +36,6 @@ export const listTrips: AppRouteHandler<ListTripsRoute> = async (c) => {
   const { status, driverId } = c.req.query() as TripFilters;
 
   // Build the query with filters
-  let query = db.select().from(trips);
-
   const whereConditions = [];
 
   if (status) {
@@ -56,14 +51,25 @@ export const listTrips: AppRouteHandler<ListTripsRoute> = async (c) => {
     whereConditions.push(eq(trips.driverId, user.driver.id));
   }
 
-  // Apply where conditions if any exist
+  // Execute query with proper where condition handling
+  let items;
   if (whereConditions.length > 0) {
-    const combinedCondition = whereConditions.reduce((acc, condition) => and(acc, condition));
-    query = query.where(combinedCondition);
-  }
+    const combinedCondition =
+      whereConditions.length === 1
+        ? whereConditions[0]
+        : whereConditions.reduce((acc, condition) => and(acc, condition));
 
-  // Execute query
-  const items = await query.orderBy(desc(trips.createdAt));
+    items = await db
+      .select()
+      .from(trips)
+      .where(combinedCondition)
+      .orderBy(desc(trips.createdAt));
+  } else {
+    items = await db
+      .select()
+      .from(trips)
+      .orderBy(desc(trips.createdAt));
+  }
 
   return c.json(items, HttpStatusCodes.OK);
 };
@@ -76,46 +82,22 @@ export const createTrip: AppRouteHandler<CreateTripRoute> = async (c) => {
     return c.json({ message: HttpStatusPhrases.UNAUTHORIZED }, HttpStatusCodes.UNAUTHORIZED);
   }
 
-  const { waypoints, ...tripData } = c.req.valid('json');
+  const tripData = c.req.valid('json');
 
   try {
-    // Start a transaction to insert trip and waypoints
-    const trip = await db.transaction(async (tx) => {
-      // Insert trip
-      const [insertedTrip] = await tx.insert(trips).values(tripData).returning();
+    const [newTrip] = await db.insert(trips).values({
+      ...tripData,
+      riderId: user.id,
+      status: 'pending',
+    }).returning();
 
-      // Insert waypoints if provided
-      if (waypoints && waypoints.length > 0) {
-        await tx.insert(tripWaypoints).values(
-          waypoints.map((waypoint, index) => ({
-            ...waypoint,
-            tripId: insertedTrip.id,
-            orderIndex: index,
-          }))
-        );
-      }
-
-      return insertedTrip;
-    });
-
-    // Fetch the trip with any relations needed
-    const tripWithRelations = await db.query.trips.findFirst({
-      where: eq(trips.id, trip.id),
-      with: {
-        vehicleType: true,
-        tripWaypoints: {
-          orderBy: tripWaypoints.orderIndex,
-        },
-      },
-    });
-
-    return c.json(tripWithRelations, HttpStatusCodes.CREATED);
+    return c.json(newTrip, HttpStatusCodes.CREATED);
   } catch (error) {
     console.error('Error creating trip:', error);
     return c.json(
       {
         message: 'Failed to create trip',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? error.message : 'Unknown error'
       },
       HttpStatusCodes.UNPROCESSABLE_ENTITY
     );
@@ -124,156 +106,125 @@ export const createTrip: AppRouteHandler<CreateTripRoute> = async (c) => {
 
 // Get trip by ID handler
 export const getTrip: AppRouteHandler<GetTripRoute> = async (c) => {
+  const { id } = c.req.valid('param');
   const user = c.get('user');
 
   if (!user) {
     return c.json({ message: HttpStatusPhrases.UNAUTHORIZED }, HttpStatusCodes.UNAUTHORIZED);
   }
 
-  const { id } = c.req.valid('param');
+  try {
+    const trip = await db.query.trips.findFirst({
+      where: eq(trips.id, id),
+    });
 
-  const trip = await db.query.trips.findFirst({
-    where: eq(trips.id, id),
-    with: {
-      driver: true,
-      vehicleType: true,
-      paymentMethod: true,
-      promoCode: true,
-      payment: true,
-      tripWaypoints: {
-        orderBy: tripWaypoints.orderIndex,
-      },
-      tripBids: true,
-    },
-  });
+    if (!trip) {
+      return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
+    }
 
-  if (!trip) {
-    return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
+    // Check if user has access to this trip
+    const isAdmin = user.role === 'admin';
+    const isRider = trip.riderId === user.id;
+    const isDriver = user.driver && trip.driverId === user.driver.id;
+
+    if (!isAdmin && !isRider && !isDriver) {
+      return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
+    }
+
+    return c.json(trip, HttpStatusCodes.OK);
+  } catch (error) {
+    console.error('Error fetching trip:', error);
+    return c.json(
+      { message: 'Failed to fetch trip' },
+      HttpStatusCodes.INTERNAL_SERVER_ERROR
+    );
   }
-
-  // Check authorization for driver-specific trips
-  if (user.driver && trip.driverId && trip.driverId !== user.driver.id && user.role !== 'admin') {
-    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
-  }
-
-  return c.json(trip, HttpStatusCodes.OK);
 };
 
 // Update trip handler
 export const updateTrip: AppRouteHandler<UpdateTripRoute> = async (c) => {
+  const { id } = c.req.valid('param');
+  const updates = c.req.valid('json');
   const user = c.get('user');
 
   if (!user) {
     return c.json({ message: HttpStatusPhrases.UNAUTHORIZED }, HttpStatusCodes.UNAUTHORIZED);
   }
 
-  const { id } = c.req.valid('param');
-  const updates = c.req.valid('json');
-
-  // Check if at least one field is present in the request body
-  if (Object.keys(updates).length === 0) {
-    return c.json(
-      {
-        success: false,
-        error: {
-          issues: [
-            {
-              code: ZOD_ERROR_CODES.INVALID_UPDATES,
-              path: [],
-              message: ZOD_ERROR_MESSAGES.NO_UPDATES,
-            },
-          ],
-          name: 'ZodError',
-        },
-      },
-      HttpStatusCodes.UNPROCESSABLE_ENTITY
-    );
-  }
-
-  // Get the trip to check authorization and status
-  const existingTrip = await db.query.trips.findFirst({
-    where: eq(trips.id, id),
-  });
-
-  if (!existingTrip) {
-    return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
-  }
-
-  // Check authorization for driver-specific trips
-  if (user.driver && existingTrip.driverId && existingTrip.driverId !== user.driver.id && user.role !== 'admin') {
-    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
-  }
-
-  // Check if the trip can be updated based on its status
-  if (['completed', 'cancelled'].includes(existingTrip.status)) {
-    return c.json(
-      {
-        message: 'Cannot update a completed or cancelled trip',
-      },
-      HttpStatusCodes.BAD_REQUEST
-    );
-  }
-
   try {
-    const [updatedTrip] = await db.update(trips).set(updates).where(eq(trips.id, id)).returning();
+    // Check if trip exists and user has permission
+    const existingTrip = await db.query.trips.findFirst({
+      where: eq(trips.id, id),
+    });
+
+    if (!existingTrip) {
+      return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
+    }
+
+    const isAdmin = user.role === 'admin';
+    const isRider = existingTrip.riderId === user.id;
+    const isDriver = user.driver && existingTrip.driverId === user.driver.id;
+
+    if (!isAdmin && !isRider && !isDriver) {
+      return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
+    }
+
+    const [updatedTrip] = await db
+      .update(trips)
+      .set(updates)
+      .where(eq(trips.id, id))
+      .returning();
 
     return c.json(updatedTrip, HttpStatusCodes.OK);
   } catch (error) {
     console.error('Error updating trip:', error);
     return c.json(
-      {
-        message: 'Failed to update trip',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-      HttpStatusCodes.UNPROCESSABLE_ENTITY
+      { message: 'Failed to update trip' },
+      HttpStatusCodes.INTERNAL_SERVER_ERROR
     );
   }
 };
 
 // Cancel trip handler
 export const cancelTrip: AppRouteHandler<CancelTripRoute> = async (c) => {
+  const { id } = c.req.valid('param');
   const user = c.get('user');
 
   if (!user) {
     return c.json({ message: HttpStatusPhrases.UNAUTHORIZED }, HttpStatusCodes.UNAUTHORIZED);
   }
 
-  const { id } = c.req.valid('param');
-  const { cancellationReason, cancelledBy } = c.req.valid('json');
-
-  // Get the trip to check authorization and status
-  const existingTrip = await db.query.trips.findFirst({
-    where: eq(trips.id, id),
-  });
-
-  if (!existingTrip) {
-    return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
-  }
-
-  // Check authorization for driver-specific cancellations
-  if (cancelledBy === 'driver' && (!user.driver || (existingTrip.driverId !== user.driver.id && user.role !== 'admin'))) {
-    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
-  }
-
-  // Check if the trip can be cancelled based on its status
-  if (['completed', 'cancelled'].includes(existingTrip.status)) {
-    return c.json(
-      {
-        message: 'Cannot cancel a completed or already cancelled trip',
-      },
-      HttpStatusCodes.BAD_REQUEST
-    );
-  }
-
   try {
+    const trip = await db.query.trips.findFirst({
+      where: eq(trips.id, id),
+    });
+
+    if (!trip) {
+      return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
+    }
+
+    // Only rider, assigned driver, or admin can cancel
+    const isAdmin = user.role === 'admin';
+    const isRider = trip.riderId === user.id;
+    const isDriver = user.driver && trip.driverId === user.driver.id;
+
+    if (!isAdmin && !isRider && !isDriver) {
+      return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
+    }
+
+    // Can only cancel pending or accepted trips
+    if (!['pending', 'accepted'].includes(trip.status)) {
+      return c.json(
+        { message: 'Can only cancel pending or accepted trips' },
+        HttpStatusCodes.BAD_REQUEST
+      );
+    }
+
     const [cancelledTrip] = await db
       .update(trips)
       .set({
         status: 'cancelled',
-        cancellationReason,
-        cancelledBy,
         cancelledAt: new Date(),
-        updatedAt: new Date(),
       })
       .where(eq(trips.id, id))
       .returning();
@@ -282,10 +233,7 @@ export const cancelTrip: AppRouteHandler<CancelTripRoute> = async (c) => {
   } catch (error) {
     console.error('Error cancelling trip:', error);
     return c.json(
-      {
-        message: 'Failed to cancel trip',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { message: 'Failed to cancel trip' },
       HttpStatusCodes.INTERNAL_SERVER_ERROR
     );
   }
@@ -293,45 +241,40 @@ export const cancelTrip: AppRouteHandler<CancelTripRoute> = async (c) => {
 
 // Start trip handler
 export const startTrip: AppRouteHandler<StartTripRoute> = async (c) => {
+  const { id } = c.req.valid('param');
   const user = c.get('user');
 
   if (!user || !user.driver) {
-    return c.json({ message: 'Only drivers can start trips' }, HttpStatusCodes.UNAUTHORIZED);
-  }
-
-  const { id } = c.req.valid('param');
-
-  // Get the trip to check authorization and status
-  const existingTrip = await db.query.trips.findFirst({
-    where: eq(trips.id, id),
-  });
-
-  if (!existingTrip) {
-    return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
-  }
-
-  // Check authorization - only the assigned driver can start the trip
-  if (existingTrip.driverId !== user.driver.id && user.role !== 'admin') {
-    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
-  }
-
-  // Check if the trip can be started based on its status
-  if (existingTrip.status !== 'accepted') {
-    return c.json(
-      {
-        message: 'Only accepted trips can be started',
-      },
-      HttpStatusCodes.BAD_REQUEST
-    );
+    return c.json({ message: 'Only drivers can start trips' }, HttpStatusCodes.FORBIDDEN);
   }
 
   try {
+    const trip = await db.query.trips.findFirst({
+      where: eq(trips.id, id),
+    });
+
+    if (!trip) {
+      return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
+    }
+
+    // Only assigned driver can start the trip
+    if (trip.driverId !== user.driver.id) {
+      return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
+    }
+
+    // Can only start accepted trips
+    if (trip.status !== 'accepted') {
+      return c.json(
+        { message: 'Can only start accepted trips' },
+        HttpStatusCodes.BAD_REQUEST
+      );
+    }
+
     const [startedTrip] = await db
       .update(trips)
       .set({
         status: 'in_progress',
         startTime: new Date(),
-        updatedAt: new Date(),
       })
       .where(eq(trips.id, id))
       .returning();
@@ -340,10 +283,7 @@ export const startTrip: AppRouteHandler<StartTripRoute> = async (c) => {
   } catch (error) {
     console.error('Error starting trip:', error);
     return c.json(
-      {
-        message: 'Failed to start trip',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { message: 'Failed to start trip' },
       HttpStatusCodes.INTERNAL_SERVER_ERROR
     );
   }
@@ -351,78 +291,53 @@ export const startTrip: AppRouteHandler<StartTripRoute> = async (c) => {
 
 // Complete trip handler
 export const completeTrip: AppRouteHandler<CompleteTripRoute> = async (c) => {
+  const { id } = c.req.valid('param');
+  const { actualDistance, actualDuration, finalPrice } = c.req.valid('json');
   const user = c.get('user');
 
   if (!user || !user.driver) {
-    return c.json({ message: 'Only drivers can complete trips' }, HttpStatusCodes.UNAUTHORIZED);
-  }
-
-  const { id } = c.req.valid('param');
-  const { actualDistance, actualDuration, finalPrice } = c.req.valid('json');
-
-  // Get the trip to check authorization and status
-  const existingTrip = await db.query.trips.findFirst({
-    where: eq(trips.id, id),
-  });
-
-  if (!existingTrip) {
-    return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
-  }
-
-  // Check authorization - only the assigned driver can complete the trip
-  if (existingTrip.driverId !== user.driver.id && user.role !== 'admin') {
-    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
-  }
-
-  // Check if the trip can be completed based on its status
-  if (existingTrip.status !== 'in_progress') {
-    return c.json(
-      {
-        message: 'Only in-progress trips can be completed',
-      },
-      HttpStatusCodes.BAD_REQUEST
-    );
+    return c.json({ message: 'Only drivers can complete trips' }, HttpStatusCodes.FORBIDDEN);
   }
 
   try {
-    // Update driver statistics in a transaction
-    const [completedTrip] = await db.transaction(async (tx) => {
-      // Update trip
-      const [updatedTrip] = await tx
-        .update(trips)
-        .set({
-          status: 'completed',
-          endTime: new Date(),
-          actualDistance,
-          actualDuration,
-          finalPrice,
-          updatedAt: new Date(),
-        })
-        .where(eq(trips.id, id))
-        .returning();
-
-      // Update driver statistics
-      await tx
-        .update(drivers)
-        .set({
-          totalTrips: sql`${drivers.totalTrips} + 1`,
-          totalEarnings: sql`${drivers.totalEarnings} + ${finalPrice}`,
-          accountBalance: sql`${drivers.accountBalance} + ${finalPrice}`,
-          updatedAt: new Date(),
-        })
-        .where(eq(drivers.id, existingTrip.driverId!));
-
-      return [updatedTrip];
+    const trip = await db.query.trips.findFirst({
+      where: eq(trips.id, id),
     });
+
+    if (!trip) {
+      return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
+    }
+
+    // Only assigned driver can complete the trip
+    if (trip.driverId !== user.driver.id) {
+      return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
+    }
+
+    // Can only complete in-progress trips
+    if (trip.status !== 'in_progress') {
+      return c.json(
+        { message: 'Can only complete in-progress trips' },
+        HttpStatusCodes.BAD_REQUEST
+      );
+    }
+
+    const [completedTrip] = await db
+      .update(trips)
+      .set({
+        status: 'completed',
+        endTime: new Date(),
+        actualDistance,
+        actualDuration,
+        finalPrice,
+      })
+      .where(eq(trips.id, id))
+      .returning();
 
     return c.json(completedTrip, HttpStatusCodes.OK);
   } catch (error) {
     console.error('Error completing trip:', error);
     return c.json(
-      {
-        message: 'Failed to complete trip',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { message: 'Failed to complete trip' },
       HttpStatusCodes.INTERNAL_SERVER_ERROR
     );
   }
@@ -430,271 +345,101 @@ export const completeTrip: AppRouteHandler<CompleteTripRoute> = async (c) => {
 
 // Rate trip handler
 export const rateTrip: AppRouteHandler<RateTripRoute> = async (c) => {
+  const { id } = c.req.valid('param');
+  const { rating, ratingType } = c.req.valid('json');
   const user = c.get('user');
 
   if (!user) {
     return c.json({ message: HttpStatusPhrases.UNAUTHORIZED }, HttpStatusCodes.UNAUTHORIZED);
   }
 
-  const { id } = c.req.valid('param');
-  const { rating, feedback, ratingType } = c.req.valid('json');
-
-  // Get the trip to check authorization and status
-  const existingTrip = await db.query.trips.findFirst({
-    where: eq(trips.id, id),
-  });
-
-  if (!existingTrip) {
-    return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
-  }
-
-  // Check if the trip is completed
-  if (existingTrip.status !== 'completed') {
-    return c.json(
-      {
-        message: 'Only completed trips can be rated',
-      },
-      HttpStatusCodes.BAD_REQUEST
-    );
-  }
-
-  // Check authorization for driver ratings
-  if (ratingType === 'driver' && user.driver && existingTrip.driverId !== user.driver.id && user.role !== 'admin') {
-    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
-  }
-
   try {
-    // Update based on rating type
-    let update = {};
-    if (ratingType === 'driver') {
-      update = {
-        driverRating: rating,
-        driverFeedback: feedback,
-      };
-    } else {
-      update = {
-        riderRating: rating,
-        riderFeedback: feedback,
-      };
+    const trip = await db.query.trips.findFirst({
+      where: eq(trips.id, id),
+    });
+
+    if (!trip) {
+      return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
     }
 
-    const [ratedTrip] = await db.update(trips).set(update).where(eq(trips.id, id)).returning();
+    // Can only rate completed trips
+    if (trip.status !== 'completed') {
+      return c.json(
+        { message: 'Can only rate completed trips' },
+        HttpStatusCodes.BAD_REQUEST
+      );
+    }
 
-    // If it's a driver rating, update the driver's average rating
-    if (ratingType === 'rider' && existingTrip.driverId) {
-      // Calculate new average rating for the driver
-      const driverTrips = await db
-        .select({ rating: trips.riderRating })
-        .from(trips)
-        .where(and(eq(trips.driverId, existingTrip.driverId), sql`${trips.rider_rating} IS NOT NULL`));
+    let updateData: any = {};
 
-      if (driverTrips.length > 0) {
-        const totalRating = driverTrips.reduce((sum, trip) => sum + (trip.rating || 0), 0);
-        const averageRating = totalRating / driverTrips.length;
-
-        await db.update(drivers).set({ rating: averageRating }).where(eq(drivers.id, existingTrip.driverId));
+    if (ratingType === 'rider' && trip.riderId === user.id) {
+      // Rider rating the driver
+      if (trip.driverRating) {
+        return c.json(
+          { message: 'Driver has already been rated for this trip' },
+          HttpStatusCodes.BAD_REQUEST
+        );
       }
+      updateData.driverRating = rating;
+    } else if (ratingType === 'driver' && user.driver && trip.driverId === user.driver.id) {
+      // Driver rating the rider
+      if (trip.riderRating) {
+        return c.json(
+          { message: 'Rider has already been rated for this trip' },
+          HttpStatusCodes.BAD_REQUEST
+        );
+      }
+      updateData.riderRating = rating;
+    } else {
+      return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
     }
+
+    const [ratedTrip] = await db
+      .update(trips)
+      .set(updateData)
+      .where(eq(trips.id, id))
+      .returning();
 
     return c.json(ratedTrip, HttpStatusCodes.OK);
   } catch (error) {
     console.error('Error rating trip:', error);
     return c.json(
-      {
-        message: 'Failed to rate trip',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { message: 'Failed to rate trip' },
       HttpStatusCodes.INTERNAL_SERVER_ERROR
     );
   }
 };
 
-// Add waypoint handler
+// Placeholder handlers for other routes
 export const addWaypoint: AppRouteHandler<AddWaypointRoute> = async (c) => {
-  const user = c.get('user');
-
-  if (!user) {
-    return c.json({ message: HttpStatusPhrases.UNAUTHORIZED }, HttpStatusCodes.UNAUTHORIZED);
-  }
-
-  const { id } = c.req.valid('param');
-  const waypointData = c.req.valid('json');
-
-  // Check if trip exists
-  const existingTrip = await db.query.trips.findFirst({
-    where: eq(trips.id, id),
-  });
-
-  if (!existingTrip) {
-    return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
-  }
-
-  // Check authorization for driver-specific trips
-  if (user.driver && existingTrip.driverId && existingTrip.driverId !== user.driver.id && user.role !== 'admin') {
-    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
-  }
-
-  // Get current max order index
-  const maxOrderResult = await db
-    .select({ maxOrder: sql<number>`COALESCE(MAX(${tripWaypoints.orderIndex}), -1)` })
-    .from(tripWaypoints)
-    .where(eq(tripWaypoints.tripId, id));
-
-  const nextOrderIndex = (maxOrderResult[0]?.maxOrder ?? -1) + 1;
-
-  try {
-    const [waypoint] = await db
-      .insert(tripWaypoints)
-      .values({
-        ...waypointData,
-        tripId: id,
-        orderIndex: nextOrderIndex,
-      })
-      .returning();
-
-    return c.json(waypoint, HttpStatusCodes.CREATED);
-  } catch (error) {
-    console.error('Error adding waypoint:', error);
-    return c.json(
-      {
-        message: 'Failed to add waypoint',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-      HttpStatusCodes.UNPROCESSABLE_ENTITY
-    );
-  }
+  return c.json({ message: 'Not implemented yet' }, HttpStatusCodes.NOT_IMPLEMENTED);
 };
 
-// Get waypoints handler
 export const getWaypoints: AppRouteHandler<GetWaypointsRoute> = async (c) => {
-  const user = c.get('user');
-
-  if (!user) {
-    return c.json({ message: HttpStatusPhrases.UNAUTHORIZED }, HttpStatusCodes.UNAUTHORIZED);
-  }
-
-  const { id } = c.req.valid('param');
-
-  // Check if trip exists
-  const existingTrip = await db.query.trips.findFirst({
-    where: eq(trips.id, id),
-  });
-
-  if (!existingTrip) {
-    return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
-  }
-
-  // Check authorization for driver-specific trips
-  if (user.driver && existingTrip.driverId && existingTrip.driverId !== user.driver.id && user.role !== 'admin') {
-    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
-  }
-
-  const waypoints = await db.select().from(tripWaypoints).where(eq(tripWaypoints.tripId, id)).orderBy(tripWaypoints.orderIndex);
-
-  return c.json(waypoints, HttpStatusCodes.OK);
+  return c.json({ message: 'Not implemented yet' }, HttpStatusCodes.NOT_IMPLEMENTED);
 };
 
-// Update location handler
 export const updateLocation: AppRouteHandler<UpdateLocationRoute> = async (c) => {
-  const user = c.get('user');
-
-  if (!user || !user.driver) {
-    return c.json({ message: 'Only drivers can update location' }, HttpStatusCodes.UNAUTHORIZED);
-  }
-
-  const { id } = c.req.valid('param');
-  const locationData = c.req.valid('json');
-
-  // Check if trip exists and is assigned to this driver
-  const existingTrip = await db.query.trips.findFirst({
-    where: eq(trips.id, id),
-  });
-
-  if (!existingTrip) {
-    return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
-  }
-
-  // Check authorization - only the assigned driver can update location
-  if (existingTrip.driverId !== user.driver.id && user.role !== 'admin') {
-    return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
-  }
-
-  // Check if the trip is in a valid state for location updates
-  if (!['accepted', 'in_progress'].includes(existingTrip.status)) {
-    return c.json(
-      {
-        message: 'Location can only be updated for accepted or in-progress trips',
-      },
-      HttpStatusCodes.BAD_REQUEST
-    );
-  }
-
-  try {
-    const [locationUpdate] = await db
-      .insert(tripLocationUpdates)
-      .values({
-        ...locationData,
-        tripId: id,
-      })
-      .returning();
-
-    return c.json(locationUpdate, HttpStatusCodes.CREATED);
-  } catch (error) {
-    console.error('Error updating location:', error);
-    return c.json(
-      {
-        message: 'Failed to update location',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-      HttpStatusCodes.UNPROCESSABLE_ENTITY
-    );
-  }
+  return c.json({ message: 'Not implemented yet' }, HttpStatusCodes.NOT_IMPLEMENTED);
 };
 
-// Get location updates handler
 export const getLocationUpdates: AppRouteHandler<GetLocationUpdatesRoute> = async (c) => {
-  const user = c.get('user');
-
-  if (!user) {
-    return c.json({ message: HttpStatusPhrases.UNAUTHORIZED }, HttpStatusCodes.UNAUTHORIZED);
-  }
-
-  const { id } = c.req.valid('param');
-
-  // Check if trip exists
-  const existingTrip = await db.query.trips.findFirst({
-    where: eq(trips.id, id),
-  });
-
-  if (!existingTrip) {
-    return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
-  }
-
-  // No need to check authorization as location updates are public for trip participants
-
-  const locationUpdates = await db.select().from(tripLocationUpdates).where(eq(tripLocationUpdates.tripId, id)).orderBy(desc(tripLocationUpdates.timestamp));
-
-  return c.json(locationUpdates, HttpStatusCodes.OK);
+  return c.json({ message: 'Not implemented yet' }, HttpStatusCodes.NOT_IMPLEMENTED);
 };
 
-// Add these imports
-
-
-// Add SearchAvailableVehiclesRoute to the imports at the top
-
-// Add this function for calculating distance between coordinates (using Haversine formula)
+// Calculate distance function
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Radius of the earth in km
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLon = (lon2 - lon1) * (Math.PI / 180);
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const R = 6371; // Radius of the Earth in kilometers
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const distance = R * c; // Distance in km
-  return distance;
+  return R * c; // Distance in kilometers
 }
 
-// Add this new handler function
-// Search available vehicles handler
 export const searchAvailableVehicles: AppRouteHandler<SearchAvailableVehiclesRoute> = async (c) => {
   const user = c.get('user');
 
@@ -702,79 +447,104 @@ export const searchAvailableVehicles: AppRouteHandler<SearchAvailableVehiclesRou
     return c.json({ message: HttpStatusPhrases.UNAUTHORIZED }, HttpStatusCodes.UNAUTHORIZED);
   }
 
-  const { pickupLat, pickupLng, vehicleTypeId, maxDistance } = c.req.query() as SearchQuery;
+  const {
+    pickupLat,
+    pickupLng,
+    vehicleTypeId,
+    maxDistance = 10
+  } = c.req.query() as {
+    pickupLat?: number;
+    pickupLng?: number;
+    vehicleTypeId?: string;
+    maxDistance?: number;
+  };
 
-  // Base query to get active vehicles with their drivers
-  const query = db
-    .select({
-      vehicle: vehicles,
-      driver: drivers,
-      user: user,
-    })
-    .from(vehicles)
-    .innerJoin(drivers, eq(vehicles.driverId, drivers.id))
-    .innerJoin(user, eq(drivers.userId, user.id))
-    .where(
-      and(
-        eq(vehicles.isActive, true),
-        eq(drivers.isAvailable, true),
-        eq(drivers.isVerified, true),
-        // Add vehicle type filter if provided
-        vehicleTypeId ? eq(vehicles.vehicleTypeId, vehicleTypeId) : undefined,
-        // Only include vehicles that have location data
-        isNotNull(vehicles.currentLocationLat),
-        isNotNull(vehicles.currentLocationLng),
-        // Exclude vehicles that are already assigned to an in-progress trip
-        not(
-          inArray(
-            vehicles.driverId,
-            db
-              .select({ driverId: trips.driverId })
-              .from(trips)
-              .where(and(isNotNull(trips.driverId), inArray(trips.status, ['accepted', 'in_progress'])))
-          )
+  try {
+    // Build conditions for available vehicles
+    const conditions = [
+      eq(vehicles.isActive, true),
+      eq(drivers.isAvailable, true),
+      eq(drivers.isVerified, true),
+      isNotNull(vehicles.currentLocationLat),
+      isNotNull(vehicles.currentLocationLng),
+    ];
+
+    if (vehicleTypeId) {
+      conditions.push(eq(vehicles.vehicleTypeId, vehicleTypeId));
+    }
+
+    // Get busy driver IDs in a separate query
+    const busyDriverIds = await db
+      .select({ driverId: trips.driverId })
+      .from(trips)
+      .where(
+        and(
+          isNotNull(trips.driverId),
+          inArray(trips.status, ['accepted', 'in_progress'])
         )
-      )
-    );
+      );
 
-  const availableVehicles = await query;
+    const busyDriverIdsList = busyDriverIds.map(d => d.driverId).filter(Boolean);
 
-  // If pickup coordinates are provided, calculate distances and filter by max distance
-  let results = availableVehicles;
+    // Add condition to exclude busy drivers
+    if (busyDriverIdsList.length > 0) {
+      conditions.push(not(inArray(drivers.id, busyDriverIdsList)));
+    }
 
-  if (pickupLat && pickupLng) {
-    results = availableVehicles
-      .map((item) => {
-        const distance = calculateDistance(pickupLat, pickupLng, item.vehicle.currentLocationLat!, item.vehicle.currentLocationLng!);
-
-        // Calculate estimated arrival time (rough estimation: assume 30 km/h average speed in city)
-        // This gives arrival time in minutes
-        const estimatedArrivalTime = Math.round((distance / 30) * 60);
-
-        return {
-          ...item,
-          distanceFromPickup: distance,
-          estimatedArrivalTime,
-        };
+    // Query available vehicles with their drivers and users
+    const availableVehicles = await db
+      .select({
+        vehicle: vehicles,
+        driver: drivers,
+        user: user,
       })
-      .filter((item) => item.distanceFromPickup <= maxDistance)
-      // Sort by distance (closest first)
-      .sort((a, b) => a.distanceFromPickup - b.distanceFromPickup);
+      .from(vehicles)
+      .innerJoin(drivers, eq(vehicles.driverId, drivers.id))
+      .innerJoin(user, eq(drivers.userId, user.id))
+      .where(and(...conditions));
+
+    // Calculate distances if pickup coordinates are provided
+    let results = availableVehicles.map(item => ({
+      vehicle: item.vehicle,
+      driver: {
+        id: item.driver.id,
+        name: item.user.name || 'Unknown Driver',
+        rating: item.driver.rating,
+        totalTrips: item.driver.totalTrips,
+        isAvailable: item.driver.isAvailable,
+      },
+      distanceFromPickup: undefined as number | undefined,
+      estimatedArrivalTime: undefined as number | undefined,
+    }));
+
+    if (pickupLat && pickupLng) {
+      results = results
+        .map((item) => {
+          const distance = calculateDistance(
+            pickupLat,
+            pickupLng,
+            item.vehicle.currentLocationLat!,
+            item.vehicle.currentLocationLng!
+          );
+
+          const estimatedArrivalTime = Math.round(distance * 2); // 2 minutes per km
+
+          return {
+            ...item,
+            distanceFromPickup: Math.round(distance * 100) / 100,
+            estimatedArrivalTime,
+          };
+        })
+        .filter((item) => item.distanceFromPickup! <= maxDistance)
+        .sort((a, b) => a.distanceFromPickup! - b.distanceFromPickup!);
+    }
+
+    return c.json(results, HttpStatusCodes.OK);
+  } catch (error) {
+    console.error('Error searching available vehicles:', error);
+    return c.json(
+      { message: 'Failed to search available vehicles' },
+      HttpStatusCodes.INTERNAL_SERVER_ERROR
+    );
   }
-
-  // Format response to match the expected schema
-  const formattedResults = results.map((item) => ({
-    vehicle: item.vehicle,
-    driver: {
-      id: item.driver.id,
-      name: `${item.user.firstName} ${item.user.lastName}`,
-      rating: item.driver.rating,
-      totalTrips: item.driver.totalTrips,
-      isAvailable: item.driver.isAvailable,
-    },
-    distanceFromPickup: 'distanceFromPickup' in item ? item.distanceFromPickup : undefined,
-    estimatedArrivalTime: 'estimatedArrivalTime' in item ? item.estimatedArrivalTime : undefined,
-  }));
-
-  return c.json(formattedResults, HttpStatusCodes.OK);
 };

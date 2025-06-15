@@ -5,7 +5,7 @@ import * as HttpStatusPhrases from 'stoker/http-status-phrases';
 import type { AppRouteHandler } from '@/types';
 
 import { db } from '@/db';
-import { drivers, trips, tripBids, vehicles } from '@/db/schema';
+import { drivers, tripBids, trips, vehicles } from '@/db/schema';
 import { ZOD_ERROR_CODES, ZOD_ERROR_MESSAGES } from '@/lib/constants';
 
 import type {
@@ -93,7 +93,7 @@ export const listBids: AppRouteHandler<ListBidsRoute> = async (c) => {
   );
 };
 
-// Create bid handler
+// Create bid handler - Added better validation
 export const createBid: AppRouteHandler<CreateBidRoute> = async (c) => {
   const user = c.get('user');
 
@@ -102,6 +102,19 @@ export const createBid: AppRouteHandler<CreateBidRoute> = async (c) => {
   }
 
   const bidData = c.req.valid('json');
+
+  // Check if driver exists and is verified
+  const driver = await db.query.drivers.findFirst({
+    where: eq(drivers.id, bidData.driverId),
+  });
+
+  if (!driver) {
+    return c.json({ message: 'Driver not found' }, HttpStatusCodes.NOT_FOUND);
+  }
+
+  if (!driver.isVerified) {
+    return c.json({ message: 'Only verified drivers can create bids' }, HttpStatusCodes.FORBIDDEN);
+  }
 
   // Verify the driver owns the vehicle
   const vehicle = await db.query.vehicles.findFirst({
@@ -117,6 +130,16 @@ export const createBid: AppRouteHandler<CreateBidRoute> = async (c) => {
     );
   }
 
+  // Check if vehicle is active
+  if (!vehicle.isActive) {
+    return c.json(
+      {
+        message: 'Cannot bid with an inactive vehicle',
+      },
+      HttpStatusCodes.UNPROCESSABLE_ENTITY
+    );
+  }
+
   // Verify the trip exists and is in 'pending' status
   const trip = await db.query.trips.findFirst({
     where: eq(trips.id, bidData.tripId),
@@ -127,27 +150,62 @@ export const createBid: AppRouteHandler<CreateBidRoute> = async (c) => {
       {
         message: 'Trip not found',
       },
-      HttpStatusCodes.UNPROCESSABLE_ENTITY
+      HttpStatusCodes.NOT_FOUND
     );
   }
 
   if (trip.status !== 'pending') {
     return c.json(
       {
-        message: 'Bids can only be placed on pending trips',
+        message: 'Can only bid on pending trips',
       },
-      HttpStatusCodes.UNPROCESSABLE_ENTITY
+      HttpStatusCodes.BAD_REQUEST
+    );
+  }
+
+  // Check if bidding is still open
+  if (trip.biddingEndTime && new Date() > trip.biddingEndTime) {
+    return c.json(
+      {
+        message: 'Bidding period has ended for this trip',
+      },
+      HttpStatusCodes.BAD_REQUEST
+    );
+  }
+
+  // Check if driver already has a bid for this trip
+  const existingBid = await db.query.tripBids.findFirst({
+    where: and(eq(tripBids.tripId, bidData.tripId), eq(tripBids.driverId, bidData.driverId)),
+  });
+
+  if (existingBid) {
+    return c.json(
+      {
+        message: 'Driver has already placed a bid for this trip',
+      },
+      HttpStatusCodes.CONFLICT
     );
   }
 
   try {
-    const [inserted] = await db.insert(tripBids).values(bidData).returning();
-    return c.json(inserted, HttpStatusCodes.CREATED);
+    const [bid] = await db.insert(tripBids).values(bidData).returning();
+
+    // Fetch the created bid with relations
+    const bidWithRelations = await db.query.tripBids.findFirst({
+      where: eq(tripBids.id, bid.id),
+      with: {
+        driver: true,
+        vehicle: true,
+        trip: true,
+      },
+    });
+
+    return c.json(bidWithRelations, HttpStatusCodes.CREATED);
   } catch (error) {
     console.error('Error creating bid:', error);
     return c.json(
       {
-        message: 'Failed to create bid. You may have already placed a bid for this trip with this vehicle.',
+        message: 'Failed to create bid',
         error: error instanceof Error ? error.message : 'Unknown error',
       },
       HttpStatusCodes.UNPROCESSABLE_ENTITY

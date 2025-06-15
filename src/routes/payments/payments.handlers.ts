@@ -177,7 +177,7 @@ export const updatePayment: AppRouteHandler<UpdatePaymentRoute> = async (c) => {
   return c.json(payment, HttpStatusCodes.OK);
 };
 
-// Delete payment handler
+// Delete payment handler - Fixed the database query check
 export const deletePayment: AppRouteHandler<DeletePaymentRoute> = async (c) => {
   const user = c.get('user');
 
@@ -189,7 +189,8 @@ export const deletePayment: AppRouteHandler<DeletePaymentRoute> = async (c) => {
 
   const result = await db.delete(payments).where(eq(payments.id, id));
 
-  if (result.rows.length === 0) {
+  // Fixed: Check rowCount instead of rows.length
+  if (result.rowCount === 0) {
     return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
   }
 

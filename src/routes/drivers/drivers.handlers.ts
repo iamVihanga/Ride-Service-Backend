@@ -26,9 +26,9 @@ export const create: AppRouteHandler<CreateRoute> = async (c) => {
     return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
   }
 
-  // Check user exists
+  // Check user exists - Fixed the query
   const userExists = await db.query.user.findFirst({
-    where: eq(user?.id, session.userId),
+    where: eq(user.id, session.userId),
   });
 
   if (!userExists) {
@@ -36,6 +36,15 @@ export const create: AppRouteHandler<CreateRoute> = async (c) => {
   }
 
   const driverData = c.req.valid('json');
+
+  // Check if driver already exists for this user
+  const existingDriver = await db.query.drivers.findFirst({
+    where: eq(drivers.userId, session.userId),
+  });
+
+  if (existingDriver) {
+    return c.json({ message: 'Driver record already exists for this user' }, HttpStatusCodes.CONFLICT);
+  }
 
   const [inserted] = await db.insert(drivers).values(driverData).returning();
 
@@ -55,12 +64,12 @@ export const getOne: AppRouteHandler<GetOneRoute> = async (c) => {
   return c.json(driver, HttpStatusCodes.OK);
 };
 
-// Update task route handler
+// Update driver route handler
 export const patch: AppRouteHandler<PatchRoute> = async (c) => {
   const { id } = c.req.valid('param');
   const updates = c.req.valid('json');
 
-  // Checs at least one field is present in the request body
+  // Check at least one field is present in the request body
   if (Object.keys(updates).length === 0) {
     return c.json(
       {
@@ -98,9 +107,10 @@ export const patch: AppRouteHandler<PatchRoute> = async (c) => {
 export const remove: AppRouteHandler<RemoveRoute> = async (c) => {
   const { id } = c.req.valid('param');
 
+  // Fixed: Check rowCount instead of rows.length
   const result = await db.delete(drivers).where(eq(drivers.id, id));
 
-  if (result.rows.length === 0) {
+  if (result.rowCount === 0) {
     return c.json({ message: HttpStatusPhrases.NOT_FOUND }, HttpStatusCodes.NOT_FOUND);
   }
 

@@ -86,7 +86,7 @@ export const listVehicles: AppRouteHandler<ListVehiclesRoute> = async (c) => {
   );
 };
 
-// Add vehicle to driver route handler
+// Add vehicle to driver route handler - Added proper authorization
 export const addVehicle: AppRouteHandler<AddVehicleRoute> = async (c) => {
   const user = c.get('user');
 
@@ -96,9 +96,38 @@ export const addVehicle: AppRouteHandler<AddVehicleRoute> = async (c) => {
 
   const body = c.req.valid('json');
 
-  const addedVehicle = await db.insert(vehicles).values(body).returning();
+  // Check if user has a driver record or is admin
+  if (!user.driver && user.role !== 'admin') {
+    return c.json({ message: 'Only drivers can add vehicles' }, HttpStatusCodes.FORBIDDEN);
+  }
 
-  return c.json(addedVehicle[0], HttpStatusCodes.OK);
+  // If not admin, ensure the vehicle is being added to their own driver record
+  if (user.role !== 'admin' && body.driverId !== user.driver?.id) {
+    return c.json({ message: 'Cannot add vehicle to another driver' }, HttpStatusCodes.FORBIDDEN);
+  }
+
+  // Check if license plate already exists
+  const existingVehicle = await db.query.vehicles.findFirst({
+    where: eq(vehicles.licensePlate, body.licensePlate),
+  });
+
+  if (existingVehicle) {
+    return c.json({ message: 'Vehicle with this license plate already exists' }, HttpStatusCodes.CONFLICT);
+  }
+
+  try {
+    const [addedVehicle] = await db.insert(vehicles).values(body).returning();
+    return c.json(addedVehicle, HttpStatusCodes.CREATED);
+  } catch (error) {
+    console.error('Error adding vehicle:', error);
+    return c.json(
+      {
+        message: 'Failed to add vehicle',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      HttpStatusCodes.UNPROCESSABLE_ENTITY
+    );
+  }
 };
 
 // Get vehicle types route handler
@@ -114,7 +143,7 @@ export const selectVehicleTypes: AppRouteHandler<SelectVehicleTypeRoute> = async
   return c.json(allVehicleTypes, HttpStatusCodes.OK);
 };
 
-// Add vehicle type route handler
+// Add vehicle type route handler - Added admin check
 export const addVehicleType: AppRouteHandler<AddVehicleTypeRoute> = async (c) => {
   const user = c.get('user');
 
@@ -122,9 +151,33 @@ export const addVehicleType: AppRouteHandler<AddVehicleTypeRoute> = async (c) =>
     return c.json({ message: HttpStatusPhrases.FORBIDDEN }, HttpStatusCodes.FORBIDDEN);
   }
 
+  // Only admins can add vehicle types
+  if (user.role !== 'admin') {
+    return c.json({ message: 'Only administrators can add vehicle types' }, HttpStatusCodes.FORBIDDEN);
+  }
+
   const body = c.req.valid('json');
 
-  const createType = await db.insert(vehicleTypes).values(body).returning();
+  // Check if vehicle type name already exists
+  const existingType = await db.query.vehicleTypes.findFirst({
+    where: eq(vehicleTypes.name, body.name),
+  });
 
-  return c.json(createType[0], HttpStatusCodes.OK);
+  if (existingType) {
+    return c.json({ message: 'Vehicle type with this name already exists' }, HttpStatusCodes.CONFLICT);
+  }
+
+  try {
+    const [createType] = await db.insert(vehicleTypes).values(body).returning();
+    return c.json(createType, HttpStatusCodes.CREATED);
+  } catch (error) {
+    console.error('Error creating vehicle type:', error);
+    return c.json(
+      {
+        message: 'Failed to create vehicle type',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      HttpStatusCodes.UNPROCESSABLE_ENTITY
+    );
+  }
 };
