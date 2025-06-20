@@ -3,7 +3,7 @@ import { boolean, doublePrecision, index, integer, pgTable, text, timestamp, uui
 import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
 import { z } from 'zod';
 
-import { drivers, selectDriverSchema } from '@/db/schema';
+import { drivers, selectDriverSchema } from '@/routes/drivers/drivers.schema';
 
 /**
  * Vehicles Table - Stores information about drivers' vehicles

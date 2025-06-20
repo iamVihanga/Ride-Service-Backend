@@ -23,6 +23,8 @@ export const drivers = pgTable(
     totalTrips: integer('total_trips').default(0).notNull(),
     totalEarnings: doublePrecision('total_earnings').default(0).notNull(),
     accountBalance: doublePrecision('account_balance').default(0).notNull(),
+    name: text('name'), // Driver's name (often populated from user table)
+    fcmToken: text('fcm_token'), // Firebase Cloud Messaging token for push notifications
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
