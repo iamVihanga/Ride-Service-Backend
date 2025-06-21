@@ -5,6 +5,7 @@ import bids from '@/routes/bids/bids.index';
 import drivers from '@/routes/drivers/drivers.index';
 import index from '@/routes/index.route';
 import payments, { methodsRouter, promoCodesRouter } from '@/routes/payments/payments.index';
+import trips from '@/routes/trips/trips.index';
 import vehicles from '@/routes/vehicles/vehicles.index';
 
 const app = createApp();
@@ -21,7 +22,7 @@ const _app = app
   .route('/payment-methods', methodsRouter)
   .route('/promo-codes', promoCodesRouter)
   .route('/bids', bids)
-// .route('/trips', trips);
+  .route('/trips', trips);
 
 export type AppType = typeof _app;
 
