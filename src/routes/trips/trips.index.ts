@@ -3,28 +3,37 @@ import { createRouter } from '@/lib/create-app';
 import * as handlers from './trips.handlers';
 import * as routes from './trips.routes';
 
-const router = createRouter()
-  // Search functionality
-  .openapi(routes.searchAvailableVehicles, handlers.searchAvailableVehicles)
+// Create router for main trip operations
+const router = createRouter();
 
-  // Basic CRUD operations
-  .openapi(routes.listTrips, handlers.listTrips)
-  .openapi(routes.createTrip, handlers.createTrip)
-  .openapi(routes.getTrip, handlers.getTrip)
-  .openapi(routes.updateTrip, handlers.updateTrip)
+// Basic CRUD operations
+router.openapi(routes.listTrips, handlers.listTrips);
+router.openapi(routes.createTrip, handlers.createTrip);
+router.openapi(routes.getTrip, handlers.getTrip);
+router.openapi(routes.updateTrip, handlers.updateTrip);
 
-  // Trip state management
-  .openapi(routes.cancelTrip, handlers.cancelTrip)
-  .openapi(routes.startTrip, handlers.startTrip)
-  .openapi(routes.completeTrip, handlers.completeTrip)
-  .openapi(routes.rateTrip, handlers.rateTrip)
+// Trip state management
+router.openapi(routes.cancelTrip, handlers.cancelTrip);
+router.openapi(routes.startTrip, handlers.startTrip);
+router.openapi(routes.completeTrip, handlers.completeTrip);
+router.openapi(routes.rateTrip, handlers.rateTrip);
 
-  // Waypoints management
-  .openapi(routes.addWaypoint, handlers.addWaypoint)
-  .openapi(routes.getWaypoints, handlers.getWaypoints)
+// Waypoints management
+router.openapi(routes.addWaypoint, handlers.addWaypoint);
+router.openapi(routes.getWaypoints, handlers.getWaypoints);
 
-  // Location tracking
-  .openapi(routes.updateLocation, handlers.updateLocation)
-  .openapi(routes.getLocationUpdates, handlers.getLocationUpdates);
+// Location tracking
+router.openapi(routes.updateLocation, handlers.updateLocation);
+router.openapi(routes.getLocationUpdates, handlers.getLocationUpdates);
+
+// Search functionality
+router.openapi(routes.searchAvailableVehicles, handlers.searchAvailableVehicles);
+
+// Only include routes that are properly defined in the routes file
+
+// Create a sub-router for driver candidates if needed
+// This would typically be imported or created here
+// const driverCandidatesRouter = createRouter();
+// router.route('/driver-candidates', driverCandidatesRouter);
 
 export default router;

@@ -1,3 +1,75 @@
+CREATE TABLE "account" (
+	"id" text PRIMARY KEY NOT NULL,
+	"account_id" text NOT NULL,
+	"provider_id" text NOT NULL,
+	"user_id" text NOT NULL,
+	"access_token" text,
+	"refresh_token" text,
+	"id_token" text,
+	"access_token_expires_at" timestamp,
+	"refresh_token_expires_at" timestamp,
+	"scope" text,
+	"password" text,
+	"created_at" timestamp NOT NULL,
+	"updated_at" timestamp NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "otp_list" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"code" text NOT NULL,
+	"phone_number" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now()
+);
+--> statement-breakpoint
+CREATE TABLE "session" (
+	"id" text PRIMARY KEY NOT NULL,
+	"expires_at" timestamp NOT NULL,
+	"token" text NOT NULL,
+	"created_at" timestamp NOT NULL,
+	"updated_at" timestamp NOT NULL,
+	"ip_address" text,
+	"user_agent" text,
+	"user_id" text NOT NULL,
+	"impersonated_by" text,
+	CONSTRAINT "session_token_unique" UNIQUE("token")
+);
+--> statement-breakpoint
+CREATE TABLE "user" (
+	"id" text PRIMARY KEY NOT NULL,
+	"name" text NOT NULL,
+	"email" text NOT NULL,
+	"email_verified" boolean NOT NULL,
+	"image" text,
+	"created_at" timestamp NOT NULL,
+	"updated_at" timestamp NOT NULL,
+	"phone_number" text,
+	"phone_number_verified" boolean,
+	"role" text,
+	"banned" boolean,
+	"ban_reason" text,
+	"ban_expires" timestamp,
+	CONSTRAINT "user_email_unique" UNIQUE("email"),
+	CONSTRAINT "user_phone_number_unique" UNIQUE("phone_number")
+);
+--> statement-breakpoint
+CREATE TABLE "verification" (
+	"id" text PRIMARY KEY NOT NULL,
+	"identifier" text NOT NULL,
+	"value" text NOT NULL,
+	"expires_at" timestamp NOT NULL,
+	"created_at" timestamp,
+	"updated_at" timestamp
+);
+--> statement-breakpoint
+CREATE TABLE "tasks" (
+	"id" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "tasks_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),
+	"name" text NOT NULL,
+	"done" boolean DEFAULT false NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now()
+);
+--> statement-breakpoint
 CREATE TABLE "trip_bids" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"trip_id" uuid NOT NULL,
@@ -8,8 +80,12 @@ CREATE TABLE "trip_bids" (
 	"note" text,
 	"estimated_arrival_time" timestamp,
 	"is_selected" boolean DEFAULT false NOT NULL,
+	"distance_to_pickup" double precision,
+	"time_to_pickup" double precision,
+	"last_known_location_lat" double precision,
+	"last_known_location_lng" double precision,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now(),
 	CONSTRAINT "trip_driver_vehicle_unique" UNIQUE("trip_id","driver_id","vehicle_id")
 );
 --> statement-breakpoint
@@ -161,30 +237,42 @@ CREATE TABLE "surge_pricing" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "driver_candidates" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"trip_id" uuid NOT NULL,
+	"driver_id" uuid NOT NULL,
+	"vehicle_id" uuid NOT NULL,
+	"distance_to_pickup" double precision NOT NULL,
+	"estimated_time_to_pickup" double precision NOT NULL,
+	"base_price" double precision NOT NULL,
+	"current_bid_amount" double precision,
+	"status" text DEFAULT 'available' NOT NULL,
+	"last_location_lat" double precision NOT NULL,
+	"last_location_lng" double precision NOT NULL,
+	"last_location_timestamp" timestamp DEFAULT now() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now()
+);
+--> statement-breakpoint
 CREATE TABLE "trip_location_updates" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"trip_id" uuid NOT NULL,
+	"driver_id" uuid NOT NULL,
 	"location_lat" double precision NOT NULL,
 	"location_lng" double precision NOT NULL,
-	"timestamp" timestamp DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "trip_waypoints" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"trip_id" uuid NOT NULL,
-	"order_index" integer NOT NULL,
-	"location_lat" double precision NOT NULL,
-	"location_lng" double precision NOT NULL,
-	"address" text NOT NULL,
-	"arrived_at" timestamp,
-	"created_at" timestamp DEFAULT now() NOT NULL
+	"heading" double precision,
+	"speed" double precision,
+	"accuracy" double precision,
+	"timestamp" timestamp DEFAULT now() NOT NULL,
+	"status" text DEFAULT 'active' NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "trips" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"user_id" text NOT NULL,
 	"driver_id" uuid,
 	"vehicle_type_id" uuid NOT NULL,
-	"status" text DEFAULT 'pending' NOT NULL,
+	"status" text DEFAULT 'searching' NOT NULL,
 	"pickup_location_lat" double precision NOT NULL,
 	"pickup_location_lng" double precision NOT NULL,
 	"pickup_address" text NOT NULL,
@@ -193,13 +281,18 @@ CREATE TABLE "trips" (
 	"dropoff_address" text NOT NULL,
 	"estimated_distance" double precision NOT NULL,
 	"estimated_duration" integer NOT NULL,
+	"bidding_enabled" boolean DEFAULT false NOT NULL,
 	"bidding_end_time" timestamp,
 	"estimated_price" double precision NOT NULL,
-	"final_price" double precision NOT NULL,
+	"final_price" double precision,
 	"actual_distance" double precision,
 	"actual_duration" integer,
+	"driver_accepted_at" timestamp,
+	"driver_arrived_at" timestamp,
 	"start_time" timestamp,
 	"end_time" timestamp,
+	"bid_selection_time" timestamp,
+	"selected_bid_id" uuid,
 	"cancellation_reason" text,
 	"cancelled_by" text,
 	"cancelled_at" timestamp,
@@ -209,8 +302,25 @@ CREATE TABLE "trips" (
 	"driver_feedback" text,
 	"payment_method_id" uuid,
 	"promo_code_id" uuid,
+	"payment_status" text DEFAULT 'pending',
+	"rider_fcm_token" text,
+	"driver_fcm_token" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"updated_at" timestamp DEFAULT now()
+);
+--> statement-breakpoint
+CREATE TABLE "trip_waypoints" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"trip_id" uuid NOT NULL,
+	"sequence_number" integer NOT NULL,
+	"location_lat" double precision NOT NULL,
+	"location_lng" double precision NOT NULL,
+	"address" text NOT NULL,
+	"description" text,
+	"is_completed" boolean DEFAULT false NOT NULL,
+	"arrived_at" timestamp,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
 CREATE TABLE "vehicle_types" (
@@ -254,6 +364,8 @@ CREATE TABLE "vehicles" (
 	CONSTRAINT "vehicles_license_plate_unique" UNIQUE("license_plate")
 );
 --> statement-breakpoint
+ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "trip_bids" ADD CONSTRAINT "trip_bids_trip_id_trips_id_fk" FOREIGN KEY ("trip_id") REFERENCES "public"."trips"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "trip_bids" ADD CONSTRAINT "trip_bids_driver_id_drivers_id_fk" FOREIGN KEY ("driver_id") REFERENCES "public"."drivers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "trip_bids" ADD CONSTRAINT "trip_bids_vehicle_id_vehicles_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -267,12 +379,16 @@ ALTER TABLE "payments" ADD CONSTRAINT "payments_payment_method_id_payment_method
 ALTER TABLE "payments" ADD CONSTRAINT "payments_promo_code_id_promo_codes_id_fk" FOREIGN KEY ("promo_code_id") REFERENCES "public"."promo_codes"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app_settings" ADD CONSTRAINT "app_settings_updated_by_user_id_fk" FOREIGN KEY ("updated_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "driver_candidates" ADD CONSTRAINT "driver_candidates_trip_id_trips_id_fk" FOREIGN KEY ("trip_id") REFERENCES "public"."trips"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "driver_candidates" ADD CONSTRAINT "driver_candidates_driver_id_drivers_id_fk" FOREIGN KEY ("driver_id") REFERENCES "public"."drivers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "driver_candidates" ADD CONSTRAINT "driver_candidates_vehicle_id_vehicles_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "trip_location_updates" ADD CONSTRAINT "trip_location_updates_trip_id_trips_id_fk" FOREIGN KEY ("trip_id") REFERENCES "public"."trips"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "trip_waypoints" ADD CONSTRAINT "trip_waypoints_trip_id_trips_id_fk" FOREIGN KEY ("trip_id") REFERENCES "public"."trips"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "trip_location_updates" ADD CONSTRAINT "trip_location_updates_driver_id_drivers_id_fk" FOREIGN KEY ("driver_id") REFERENCES "public"."drivers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "trips" ADD CONSTRAINT "trips_driver_id_drivers_id_fk" FOREIGN KEY ("driver_id") REFERENCES "public"."drivers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "trips" ADD CONSTRAINT "trips_vehicle_type_id_vehicle_types_id_fk" FOREIGN KEY ("vehicle_type_id") REFERENCES "public"."vehicle_types"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "trips" ADD CONSTRAINT "trips_payment_method_id_payment_methods_id_fk" FOREIGN KEY ("payment_method_id") REFERENCES "public"."payment_methods"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "trips" ADD CONSTRAINT "trips_promo_code_id_promo_codes_id_fk" FOREIGN KEY ("promo_code_id") REFERENCES "public"."promo_codes"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "trip_waypoints" ADD CONSTRAINT "trip_waypoints_trip_id_trips_id_fk" FOREIGN KEY ("trip_id") REFERENCES "public"."trips"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "vehicles" ADD CONSTRAINT "vehicles_driver_id_drivers_id_fk" FOREIGN KEY ("driver_id") REFERENCES "public"."drivers"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "vehicles" ADD CONSTRAINT "vehicles_vehicle_type_id_vehicle_types_id_fk" FOREIGN KEY ("vehicle_type_id") REFERENCES "public"."vehicle_types"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "trip_bids_trip_id_idx" ON "trip_bids" USING btree ("trip_id");--> statement-breakpoint
@@ -295,11 +411,15 @@ CREATE INDEX "audit_logs_entity_type_idx" ON "audit_logs" USING btree ("entity_t
 CREATE INDEX "audit_logs_created_at_idx" ON "audit_logs" USING btree ("created_at");--> statement-breakpoint
 CREATE INDEX "surge_pricing_location_idx" ON "surge_pricing" USING btree ("center_lat","center_lng");--> statement-breakpoint
 CREATE INDEX "surge_pricing_time_range_idx" ON "surge_pricing" USING btree ("start_time","end_time");--> statement-breakpoint
+CREATE INDEX "driver_candidates_trip_id_idx" ON "driver_candidates" USING btree ("trip_id");--> statement-breakpoint
+CREATE INDEX "driver_candidates_driver_id_idx" ON "driver_candidates" USING btree ("driver_id");--> statement-breakpoint
 CREATE INDEX "trip_location_updates_trip_id_idx" ON "trip_location_updates" USING btree ("trip_id");--> statement-breakpoint
+CREATE INDEX "trip_location_updates_driver_id_idx" ON "trip_location_updates" USING btree ("driver_id");--> statement-breakpoint
 CREATE INDEX "trip_location_updates_timestamp_idx" ON "trip_location_updates" USING btree ("timestamp");--> statement-breakpoint
-CREATE INDEX "trip_waypoints_trip_id_idx" ON "trip_waypoints" USING btree ("trip_id");--> statement-breakpoint
 CREATE INDEX "trips_driver_id_idx" ON "trips" USING btree ("driver_id");--> statement-breakpoint
 CREATE INDEX "trips_status_idx" ON "trips" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "trip_waypoints_trip_id_idx" ON "trip_waypoints" USING btree ("trip_id");--> statement-breakpoint
+CREATE INDEX "trip_waypoints_sequence_number_idx" ON "trip_waypoints" USING btree ("sequence_number");--> statement-breakpoint
 CREATE INDEX "vehicles_vehicle_type_id_idx" ON "vehicles" USING btree ("vehicle_type_id");--> statement-breakpoint
 CREATE INDEX "vehicles_driver_id_idx" ON "vehicles" USING btree ("driver_id");--> statement-breakpoint
 CREATE INDEX "vehicles_location_idx" ON "vehicles" USING btree ("current_location_lat","current_location_lng");

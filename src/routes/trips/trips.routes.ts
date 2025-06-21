@@ -6,7 +6,9 @@ import { createErrorSchema } from 'stoker/openapi/schemas';
 
 import { notFoundSchema } from '@/lib/constants';
 import { serverAuthMiddleware } from '@/middlewares/auth-middleware';
-import { tripLocationUpdates, tripWaypoints, trips } from '@/routes/trips/trips.schema';
+import { tripLocationUpdates } from '@/routes/trips/location-updates.schema';
+import { trips } from '@/routes/trips/trips.schema';
+import { tripWaypoints } from '@/routes/trips/waypoints.schema';
 import { selectVehicleSchema } from '@/routes/vehicles/vehicles.schema';
 
 const tags: string[] = ['Trips'];

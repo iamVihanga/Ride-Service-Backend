@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1747386980018,
-      "tag": "0000_third_excalibur",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1747390071697,
-      "tag": "0001_fluffy_captain_britain",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1747403267962,
-      "tag": "0002_lethal_ted_forrester",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1747557283834,
-      "tag": "0003_freezing_vanisher",
+      "when": 1750425787476,
+      "tag": "0000_loving_echo",
       "breakpoints": true
     }
   ]

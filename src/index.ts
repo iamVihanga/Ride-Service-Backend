@@ -26,7 +26,46 @@ const _app = app
 
 export type AppType = typeof _app;
 
+// Create HTTP server for Socket.io
+import { initializeSocketService } from '@/modules/socket/socket-service';
+import { createServer } from 'http';
+
+// Create HTTP server and initialize Socket.io
+const server = createServer((req, res) => {
+  // Use an immediately invoked async function
+  (async () => {
+    try {
+      const response = await app.fetch(req as any, { ip: req.socket.remoteAddress || '' as any });
+
+      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+
+      if (response.body) {
+        await response.body.pipeTo(
+          new WritableStream({
+            write(chunk) {
+              res.write(chunk);
+            },
+            close() {
+              res.end();
+            },
+          })
+        );
+      } else {
+        res.end();
+      }
+    } catch (error) {
+      console.error('Request handling error:', error);
+      res.writeHead(500);
+      res.end('Internal Server Error');
+    }
+  })();
+});
+
+// Initialize Socket.io
+const socketService = initializeSocketService(server);
+
 export default {
   port: env.PORT,
   fetch: app.fetch,
+  server: server, // Export server for direct usage
 };
